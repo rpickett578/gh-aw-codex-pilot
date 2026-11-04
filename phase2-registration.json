@@ -1,0 +1,13 @@
+{
+  "base": "fe6bf5b4a385da3957b0f5b1678b163510da47cf",
+  "branch": "codex/phase2-registration-repair",
+  "files": {
+    ".github/workflows/ci.yml": "def5885120c003ab7c0b393a2b6f9de6615a429e1e45de6259f854b0efe5752a",
+    ".github/workflows/phase2-repair.lock.yml": "f54d2adbdbe5aa0a3918e57bb9eb8584beccce328b68c3562f7ffdcec9032eda",
+    ".github/workflows/phase2-repair.md": "763dfbc04a10068da7b3c7b06db09103319d513eaa5f5c043d675c247ec2eca8",
+    ".github/workflows/phase2-review.lock.yml": "45cb30f0d487fb9f40cccea91521cf67fc98c9a00efad18ffe1003afa0d5cdc8",
+    ".github/workflows/phase2-review.md": "a49ac111dc1576acbbd5fb52de748c48f7c12fbdd50d4c12e5d0a75624bda718",
+    "docs/phase2-registration.md": "0d6bf6823af9edb119d87fae1afb14bc38db9c1bc2ccf0a1adb7b40e462ab2b5",
+    "scripts/verify-phase2-registration.py": "e59001f89cc2f11206ab1dff0e9204a238b6bc36712cdd747441c23ba4dd0e28"
+  }
+}

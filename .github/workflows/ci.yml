@@ -30,7 +30,9 @@ jobs:
         run: |
           set -euo pipefail
           verifier="$RUNNER_TEMP/verify-pilot-ci.py"
-          if [ "$BASE_SHA" = d5c947f0000a32656eb50a55fca0270e28f6aafa ] && [ "$HEAD_BRANCH" = codex/phase2-issue-3 ]; then
+          if [ "$BASE_SHA" = fe6bf5b4a385da3957b0f5b1678b163510da47cf ] && [ "$HEAD_BRANCH" = codex/phase2-registration-repair ]; then
+            git show "$HEAD_SHA:scripts/verify-phase2-registration.py" > "$verifier"
+          elif [ "$BASE_SHA" = d5c947f0000a32656eb50a55fca0270e28f6aafa ] && [ "$HEAD_BRANCH" = codex/phase2-issue-3 ]; then
             git show "$HEAD_SHA:scripts/verify-phase2-install.py" > "$verifier"
           elif git cat-file -e "$BASE_SHA:scripts/verify-pilot-ci.py" 2>/dev/null; then
             git show "$BASE_SHA:scripts/verify-pilot-ci.py" > "$verifier"
