@@ -1,0 +1,239 @@
+"""Admission and evidence checks for Issue #3; never dispatches or mutates GitHub."""
+import base64
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+REPO = "rpickett578/gh-aw-codex-pilot"
+HEAD = "f50e1a8ccc84cee5812c31938a31c93a078e7103"
+BRANCH = "codex/pilotfix/ascii-slug-normalization-58cc9ff5c8519ae2"
+TASK = "reverse-ascii-v1"
+NEXT_BRANCH = "codex/phase2-reverse-ascii-v1"
+KEY = "phase2-2-" + HEAD + "-" + TASK
+SOURCE = "src/slugify.mjs"
+NEXT_SOURCE = "src/reverse-ascii.mjs"
+
+
+def require(ok, reason):
+    if not ok:
+        raise ValueError(reason)
+
+
+def api(path, missing=False):
+    require(path.startswith("/"), "repository-relative API path required")
+    request = urllib.request.Request("https://api.github.com/repos/" + REPO + path,
+        headers={"Authorization": "Bearer " + os.environ["GH_TOKEN"],
+                 "Accept": "application/vnd.github+json", "User-Agent": "phase2-admission"})
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        if missing and error.code == 404:
+            return None
+        raise ValueError("GitHub read failed, HTTP " + str(error.code)) from None
+
+
+def validate_pr(pr, sha):
+    require(pr["number"] == 2 and pr["state"] == "open" and pr["draft"], "PR #2 must remain open and Draft")
+    require(pr["head"]["repo"]["full_name"] == REPO and pr["base"]["repo"]["full_name"] == REPO,
+            "fork or repository mismatch")
+    require(pr["head"]["ref"] == BRANCH and pr["base"]["ref"] == "main", "branch mismatch")
+    require(pr["head"]["sha"] == sha, "PR head changed")
+
+
+def oracle(value):
+    if not isinstance(value, str):
+        return {"error": "TypeError"}
+    return {"value": re.sub(r"[^a-z0-9]+", "-", re.sub(r"[A-Z]", lambda m: m[0].lower(), value)).strip("-")}
+
+
+def validate_review(review, run_id):
+    require(review["state"] == "COMMENTED" and review["commit_id"] == HEAD,
+            "review must be COMMENT on original exact head")
+    require(review["user"]["login"] == "rpickett578", "unexpected pilot-token review identity")
+    blocks = re.findall(r"```phase2-review\s*\n(.*?)\n```", review["body"], re.S)
+    require(len(blocks) == 1, "exactly one structured review block required")
+    data = json.loads(blocks[0])
+    require(set(data) == {"run_id", "head", "verdict", "findings"}, "review schema differs")
+    require(data["run_id"] == str(run_id) and data["head"] == HEAD, "review provenance differs")
+    findings = data["findings"]
+    require(isinstance(findings, list) and len(findings) <= 3, "at most three findings")
+    require(data["verdict"] in ["clean", "findings"], "unknown review disposition")
+    require((data["verdict"] == "clean") == (len(findings) == 0), "inconsistent disposition")
+    for finding in findings:
+        require(set(finding) == {"input", "expected", "line", "reason"}, "finding schema differs")
+        require(len(json.dumps(finding["input"])) <= 256, "finding input too large")
+        require(finding["expected"] == oracle(finding["input"]), "finding contradicts TASK.md")
+        require(type(finding["line"]) is int and 1 <= finding["line"] <= 10, "invalid source line")
+        require(isinstance(finding["reason"], str) and 1 <= len(finding["reason"]) <= 1000, "missing bounded reason")
+    return data
+
+
+def review_evidence():
+    rows = api("/pulls/2/reviews?per_page=100")
+    require(len(rows) < 100, "review history exceeds bounded scan")
+    selected = []
+    for review in rows:
+        if "```phase2-review" not in (review.get("body") or ""):
+            continue
+        try:
+            evidence = validate_review(review, os.environ["GITHUB_RUN_ID"])
+        except (ValueError, KeyError, json.JSONDecodeError):
+            continue
+        selected.append((review, evidence))
+    require(len(selected) == 1, "one current-run exact-head COMMENT review required")
+    review, evidence = selected[0]
+    expected_id = os.environ.get("REVIEW_ID")
+    require(not expected_id or str(review["id"]) == expected_id, "review ID changed")
+    return review, evidence
+
+
+def source_at(sha):
+    item = api("/contents/" + SOURCE + "?ref=" + sha)
+    require(item["size"] <= 16384 and item["encoding"] == "base64", "source size or encoding differs")
+    return base64.b64decode(item["content"])
+
+
+def observe(source, value):
+    # No reviewer-provided code or shell command is executed. Only a JSON input
+    # reaches the synthetic function, in a process with no credential environment.
+    with tempfile.TemporaryDirectory(prefix="phase2-case-") as directory:
+        module = Path(directory) / "source.mjs"
+        module.write_bytes(source)
+        runner = """import {pathToFileURL} from 'node:url';
+const {slugify}=await import(pathToFileURL(process.argv[1]));
+try { console.log(JSON.stringify({value:slugify(JSON.parse(process.argv[2]))})); }
+catch(e) { console.log(JSON.stringify({error:e.name})); }"""
+        env = {key: os.environ[key] for key in ["PATH", "SystemRoot"] if key in os.environ}
+        result = subprocess.run(["node", "--permission", "--allow-fs-read=" + str(module),
+                                 "--input-type=module", "-e", runner, str(module), json.dumps(value)],
+                                capture_output=True, text=True, encoding="utf-8", timeout=5, env=env)
+        require(result.returncode == 0, "reproducer process failed")
+        return json.loads(result.stdout)
+
+
+def validate_findings(evidence, source, fixed=False):
+    require(evidence["findings"], "no authentic finding; repair is NOT APPLICABLE")
+    for finding in evidence["findings"]:
+        matches = observe(source, finding["input"]) == finding["expected"]
+        require(matches if fixed else not matches,
+                "finding not resolved" if fixed else "finding does not reproduce")
+
+
+def ci_success(checks, runs, sha):
+    relevant = [c for c in checks if c["name"] == "synthetic-tests"]
+    require(len(relevant) == 1, "required check missing or ambiguous")
+    check = relevant[0]
+    require(check["head_sha"] == sha and check["app"]["slug"] == "github-actions", "CI identity differs")
+    require(check["status"] == "completed" and check["conclusion"] == "success", "actual required CI is not success")
+    matching = [r for r in runs if r["head_sha"] == sha and r["path"] == ".github/workflows/ci.yml"]
+    require(len(matching) == 1 and matching[0]["event"] == "pull_request", "CI run missing or ambiguous")
+    require(matching[0]["status"] == "completed" and matching[0]["conclusion"] == "success", "CI run not successful")
+    require(matching[0]["run_attempt"] == 1, "CI retry not admitted")
+
+
+def actual_ci(sha, wait=False):
+    for attempt in range(13 if wait else 1):
+        checks = api("/commits/" + sha + "/check-runs")["check_runs"]
+        runs = api("/actions/workflows/ci.yml/runs?event=pull_request&head_sha=" + sha)["workflow_runs"]
+        try:
+            ci_success(checks, runs, sha)
+            print("Actual GitHub synthetic-tests success: " + sha)
+            return
+        except ValueError:
+            failures = [c for c in checks if c["name"] == "synthetic-tests" and c["status"] == "completed" and c["conclusion"] != "success"]
+            if failures or not wait or attempt == 12:
+                raise
+            time.sleep(10)  # Bounded two-minute admission wait, never reruns CI.
+
+
+def output(**values):
+    with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
+        for key, value in values.items():
+            stream.write(key + "=" + str(value) + "\n")
+
+
+def one_attempt(runs, run_id):
+    require(len(runs) < 100, "run history exceeds bounded scan")
+    require(not any(r["id"] != int(run_id) and r["display_title"] == KEY for r in runs),
+            "PR-head/task key already admitted or attempted")
+
+
+def entry():
+    require(os.environ["GITHUB_REPOSITORY"] == REPO, "pilot repository only")
+    require(os.environ["GITHUB_RUN_ATTEMPT"] == "1", "reruns forbidden")
+    require(os.environ.get("PHASE2_EXECUTION_SHA") == os.environ["GITHUB_WORKFLOW_SHA"], "separate reviewed execution authorization missing")
+    stage = sys.argv[1]
+    if stage == "admit":
+        require(os.environ["GITHUB_REF"] == "refs/heads/main", "reviewed main installation only")
+        runs = api("/actions/workflows/phase2-chain.yml/runs?event=workflow_dispatch&per_page=100")["workflow_runs"]
+        one_attempt(runs, os.environ["GITHUB_RUN_ID"])
+        validate_pr(api("/pulls/2"), HEAD)
+        require([f["filename"] for f in api("/pulls/2/files")] == [SOURCE], "unrelated PR files")
+        actual_ci(HEAD)
+    elif stage in ["review", "publish-review"]:
+        validate_pr(api("/pulls/2"), HEAD)
+        actual_ci(HEAD)
+        if stage == "review":
+            Path("/tmp/gh-aw/phase2-review-context.json").write_text(
+                json.dumps({"run_id": os.environ["GITHUB_RUN_ID"], "head": HEAD, "pr": 2}), encoding="utf-8")
+    elif stage == "route":
+        validate_pr(api("/pulls/2"), HEAD)
+        review, evidence = review_evidence()
+        if evidence["findings"]:
+            validate_findings(evidence, source_at(HEAD))
+        output(repair=str(bool(evidence["findings"])).lower(), review_id=review["id"])
+        print("Repair: " + ("required by reproducible finding" if evidence["findings"] else "NOT APPLICABLE; clean review"))
+    elif stage in ["repair", "repair-after", "publish-repair"]:
+        validate_pr(api("/pulls/2"), HEAD)
+        _, evidence = review_evidence()
+        validate_findings(evidence, source_at(HEAD))
+        Path("/tmp/gh-aw/phase2-findings.json").write_text(json.dumps(evidence), encoding="utf-8")
+        if stage == "repair-after":
+            validate_findings(evidence, Path(SOURCE).read_bytes(), fixed=True)
+    elif stage in ["continue", "next", "publish-next"]:
+        pr = api("/pulls/2")
+        sha = pr["head"]["sha"]
+        validate_pr(pr, sha)
+        require(not os.environ.get("EXPECTED_HEAD") or sha == os.environ["EXPECTED_HEAD"], "handoff head changed")
+        _, evidence = review_evidence()
+        if evidence["findings"]:
+            require(sha != HEAD, "repair did not change head")
+            repair_sha = os.environ.get("REPAIR_SHA", "")
+            if stage == "continue":
+                require(re.fullmatch(r"[a-f0-9]{40}", repair_sha), "trusted repair output SHA missing")
+                parent = api("/commits/" + sha)["parents"]
+                require(sha == repair_sha or (len(parent) == 1 and parent[0]["sha"] == repair_sha),
+                        "head is not the native repair output or its CI trigger commit")
+            compare = api("/compare/" + HEAD + "..." + sha)
+            require(compare["status"] == "ahead" and 1 <= compare["ahead_by"] <= 2, "not one bounded correction")
+            require([f["filename"] for f in compare["files"]] == [SOURCE], "repair touched unrelated files")
+            validate_findings(evidence, source_at(HEAD))
+            validate_findings(evidence, source_at(sha), fixed=True)
+        else:
+            require(sha == HEAD, "clean review no longer matches PR head")
+        actual_ci(sha, wait=stage == "continue")
+        require(api("/git/ref/heads/" + NEXT_BRANCH, missing=True) is None, "next task branch already exists")
+        if stage == "publish-next":
+            items = json.loads(Path(os.environ["GH_AW_AGENT_OUTPUT"]).read_text())["items"]
+            coding = [item for item in items if item.get("type") == "create_pull_request"]
+            require(len(coding) == 1 and coding[0].get("branch") == "phase2-reverse-ascii-v1",
+                    "next task must use its fixed branch name")
+        output(head_sha=sha, task_id=TASK, dedup_key=sha + ":" + TASK)
+    else:
+        raise ValueError("unknown phase2 stage")
+    print("PASS: Phase 2 admission " + stage)
+
+
+if __name__ == "__main__":
+    try:
+        entry()
+    except (ValueError, KeyError, TimeoutError, subprocess.SubprocessError) as error:
+        raise SystemExit("STOP: " + str(error))

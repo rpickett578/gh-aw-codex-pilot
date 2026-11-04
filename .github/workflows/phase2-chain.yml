@@ -1,0 +1,109 @@
+name: Phase 2 bounded synthetic chain
+run-name: phase2-2-f50e1a8ccc84cee5812c31938a31c93a078e7103-reverse-ascii-v1
+on:
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: phase2-2-f50e1a8ccc84cee5812c31938a31c93a078e7103-reverse-ascii-v1
+  cancel-in-progress: false
+env:
+  PHASE2_EXECUTION_SHA: ${{ vars.PHASE2_EXECUTION_SHA }}
+jobs:
+  admit:
+    if: github.repository == 'rpickett578/gh-aw-codex-pilot' && github.ref == 'refs/heads/main' && github.actor == 'rpickett578' && github.run_attempt == 1 && vars.PHASE2_EXECUTION_SHA == github.workflow_sha
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Exact PR, actual CI and one-time key admission
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/phase2.py admit
+  review:
+    needs: admit
+    uses: ./.github/workflows/phase2-review.lock.yml
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+      checks: read
+    secrets: inherit
+  route:
+    needs: review
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      repair: ${{ steps.evidence.outputs.repair }}
+      review_id: ${{ steps.evidence.outputs.review_id }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - id: evidence
+        name: Validate review and independently reproduce findings
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/phase2.py route
+  repair:
+    needs: route
+    if: needs.route.outputs.repair == 'true'
+    uses: ./.github/workflows/phase2-repair.lock.yml
+    with:
+      review_id: ${{ needs.route.outputs.review_id }}
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+      checks: read
+    secrets: inherit
+  continue:
+    needs: [route, repair]
+    if: always() && needs.route.result == 'success' && (needs.repair.result == 'success' || (needs.repair.result == 'skipped' && needs.route.outputs.repair == 'false'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      pull-requests: read
+    outputs:
+      head_sha: ${{ steps.admission.outputs.head_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - id: admission
+        name: Require resolved evidence and actual latest-head GitHub CI success
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVIEW_ID: ${{ needs.route.outputs.review_id }}
+          REPAIR_SHA: ${{ needs.repair.outputs.push_commit_sha }}
+        run: python3 scripts/phase2.py continue
+  next:
+    needs: [route, continue]
+    uses: ./.github/workflows/phase2-next.lock.yml
+    with:
+      head_sha: ${{ needs.continue.outputs.head_sha }}
+      review_id: ${{ needs.route.outputs.review_id }}
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+      checks: read
+    secrets: inherit

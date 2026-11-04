@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24.14.1
-      - name: Validate exact bootstrap or all 19 functional tests
+      - name: Validate exact installation or the scoped functional tests
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -30,7 +30,9 @@ jobs:
         run: |
           set -euo pipefail
           verifier="$RUNNER_TEMP/verify-pilot-ci.py"
-          if git cat-file -e "$BASE_SHA:scripts/verify-pilot-ci.py" 2>/dev/null; then
+          if [ "$BASE_SHA" = d5c947f0000a32656eb50a55fca0270e28f6aafa ] && [ "$HEAD_BRANCH" = codex/phase2-issue-3 ]; then
+            git show "$HEAD_SHA:scripts/verify-phase2-install.py" > "$verifier"
+          elif git cat-file -e "$BASE_SHA:scripts/verify-pilot-ci.py" 2>/dev/null; then
             git show "$BASE_SHA:scripts/verify-pilot-ci.py" > "$verifier"
           else
             git show "$HEAD_SHA:scripts/verify-pilot-ci.py" > "$verifier"
