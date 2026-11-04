@@ -1,0 +1,10 @@
+name: Synthetic Fix registration only
+on:
+  workflow_dispatch:
+permissions: {}
+jobs:
+  registration:
+    if: ${{ false }}
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "Registration only"
