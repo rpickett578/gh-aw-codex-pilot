@@ -1,10 +1,65 @@
-name: Synthetic Fix registration only
+name: Synthetic credential preflight only
 on:
   workflow_dispatch:
-permissions: {}
+permissions:
+  contents: read
 jobs:
-  registration:
-    if: ${{ false }}
+  preflight:
+    if: github.repository == 'rpickett578/gh-aw-codex-pilot' && github.ref == 'refs/heads/codex/pilot-worker' && github.run_attempt == 1
     runs-on: ubuntu-24.04
+    timeout-minutes: 3
     steps:
-      - run: echo "Registration only"
+      - name: Verify model metadata and scoped GitHub access without inference
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GH_AW_CI_TRIGGER_TOKEN: ${{ secrets.GH_AW_CI_TRIGGER_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.error
+          def request(label, url, token, method='GET', body=None):
+              if not token:
+                  raise SystemExit('FAIL: missing ' + label + ' credential')
+              headers = {'Authorization': 'Bearer ' + token, 'Accept': 'application/json',
+                         'User-Agent': 'isolated-synthetic-preflight'}
+              data = json.dumps(body).encode() if body is not None else None
+              if data is not None:
+                  headers['Content-Type'] = 'application/json'
+              try:
+                  with urllib.request.urlopen(urllib.request.Request(url, data=data,
+                       headers=headers, method=method), timeout=30) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  detail = {}
+                  try:
+                      detail = json.loads(error.read()).get('error', {})
+                  except Exception:
+                      pass
+                  code = detail.get('code', 'unavailable') if isinstance(detail, dict) else 'unavailable'
+                  print('FAIL: ' + label + ' HTTP ' + str(error.code) + ' code=' + str(code))
+                  raise SystemExit(1)
+              except Exception:
+                  raise SystemExit('FAIL: ' + label + ' transport error')
+          model = request('OpenAI model access', 'https://api.openai.com/v1/models/gpt-6.1-sol',
+                          os.environ['OPENAI_API_KEY'])
+          if model.get('id') != 'gpt-6.1-sol':
+              raise SystemExit('FAIL: model ID mismatch')
+          print('PASS: GPT-6.1 Sol model metadata accessible; no inference request made.')
+          token = os.environ['GH_AW_CI_TRIGGER_TOKEN']
+          root = 'https://api.github.com/repos/rpickett578/gh-aw-codex-pilot'
+          repo = request('CI token repository access', root, token)
+          if repo.get('full_name') != 'rpickett578/gh-aw-codex-pilot':
+              raise SystemExit('FAIL: CI token target mismatch')
+          ref_url = root + '/git/refs/heads/codex/pilot-worker'
+          ref = request('CI token branch read', ref_url, token)
+          if ref['object']['sha'] != os.environ['GITHUB_SHA']:
+              raise SystemExit('FAIL: preflight branch moved')
+          # Require actual contents-write permission with a bounded no-change ref update.
+          verified = request('CI token contents-write', ref_url, token, 'PATCH',
+                             {'sha': os.environ['GITHUB_SHA'], 'force': False})
+          if verified['object']['sha'] != os.environ['GITHUB_SHA']:
+              raise SystemExit('FAIL: branch permission probe changed commit')
+          print('PASS: CI trigger token can update only the named test branch in this probe; commit unchanged.')
+          print('PASS: deterministic credential preflight complete; no Codex or inference invoked.')
+          PY
