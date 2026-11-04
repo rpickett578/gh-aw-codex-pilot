@@ -154,4 +154,3 @@ tool generates the bundle; the separate safe-output publisher prefixes the remot
 branch as codex/phase2-reverse-ascii-v1 and publishes the Draft PR. Never push manually.
 Do not merge PR #2 or depend on its merge.
 Do not create another task or invoke another worker. Leave the Draft PR unmerged.
-

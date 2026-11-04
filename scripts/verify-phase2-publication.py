@@ -13,6 +13,7 @@ BASE = "b876867631bc89c7b5775c98c72f1b44a16c963f"
 BRANCH = "codex/phase2-publication-contract"
 REPO = "rpickett578/gh-aw-codex-pilot"
 FILES = {
+    ".gitattributes",
     ".github/workflows/ci.yml", ".github/workflows/phase2-next.md", ".github/workflows/phase2-next.lock.yml",
     "scripts/workspace_guard.py", "scripts/verify-phase2-publication.py",
     "test/phase2-recovery.test.py", "test/phase2-publication.test.py", "test/native-publication-contract.cjs",

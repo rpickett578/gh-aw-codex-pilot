@@ -1,1 +1,3 @@
 .github/workflows/*.lock.yml linguist-generated=true
+# Preserve the failed run's exact candidate patch bytes on every checkout.
+evidence/41901264550/reverse-ascii.patch text eol=lf
