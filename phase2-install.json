@@ -1,0 +1,25 @@
+{
+  "base": "d5c947f0000a32656eb50a55fca0270e28f6aafa",
+  "branch": "codex/phase2-issue-3",
+  "files": {
+    ".gitattributes": "a8301f0868de1d8d71c787b2b9c458c2834e3b008ba845c4f2db341b965e69e0",
+    ".github/workflows/ci.yml": "a0c7f32daa1ffcdcb06b1dc882e292f2bab9266cc7cc0adf0dafb6cd2050849a",
+    ".github/workflows/phase2-chain.yml": "6535e1a4f17ae4d7ca3f19e55d029745fb2ad367e2f94201a13b3ff67d7ec175",
+    ".github/workflows/phase2-next.lock.yml": "5f2e1c73560fe8f476562694798e35334ac72adcf7e7dc3dabedebf4b1d0dd83",
+    ".github/workflows/phase2-next.md": "6f09a31b3c679d624e0a5fccbf49b0cd92f9b60d793fa38dbae1307d7c5d75f8",
+    ".github/workflows/phase2-repair.lock.yml": "7f05ed7d35cdf2b27fc87f55b666458d9c8404d595a7fb444052e471c4c8cf2c",
+    ".github/workflows/phase2-repair.md": "29af893488e58a9462b778ed7154ac43f0c2658cf364b05747b4addb3a04334c",
+    ".github/workflows/phase2-review.lock.yml": "488e68d0d352d2d40ab0f3c70da56bff7e02a02b0d613cf04e9de04aef17c90e",
+    ".github/workflows/phase2-review.md": "ee07bd52c65774f1abcae3b66001197a298ed12db8ea638587c6391576def03e",
+    "AGENTS.md": "2675c7ce7bb4bee6844e477380476e76200dd8bcd6f61cf4e844637bb56de23c",
+    "docs/phase2.md": "91615bd4ba8cf10da9bb965610af9115e5cd1e3f61629d9c01b0c92cd1475cca",
+    "fixtures/seeded-defect/README.md": "657d825a11c093fdb9391b743790c7ec53889feb6309f71a3f600fa51087627c",
+    "fixtures/seeded-defect/slugify.mjs": "e93b5b6d2f463dd3fa8cda407de99744f41a8e7eeb9206d982d3fd96d7aebb57",
+    "scripts/phase2.py": "23798fd0d4e416ba00414a86f416075440316b064e0a06a9519772c21c573d6b",
+    "scripts/verify-phase2-install.py": "5fd615c005bceb6d118a7e7f713ee2439f1b779e1349085a949324ee101f4725",
+    "scripts/verify-pilot-ci.py": "a594550dadd3186eac6cefcf8edcc81079de034b443d70f8ecd5def431637ddb",
+    "src/reverse-ascii.mjs": "403a2ccec7fd378a55651167f176aad69394ffb531ec32eacca29f579aa242b0",
+    "test/phase2-policy.test.py": "62ae52a4055c8878fb58484bff16257b4acd6a6b6a5da8e7e70641d72b1a9394",
+    "test/reverse-ascii.test.mjs": "d94d25191614cd893bb3935087a3fa63e4d90b2ca0858150a067ebc8e88a2883"
+  }
+}

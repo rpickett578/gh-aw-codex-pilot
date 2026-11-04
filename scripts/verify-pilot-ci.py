@@ -95,7 +95,18 @@ if base == INITIAL:
     print("PASS: exact inert bootstrap; 19-test baseline has expected 9 failures.")
 else:
     changed = git("diff", "--name-only", "-z", base + "..." + head).split(b"\0")
-    require(changed == [b"src/slugify.mjs", b""], "normal PR must change source only")
+    if changed == [b"src/reverse-ascii.mjs", b""]:
+        require(os.environ["HEAD_BRANCH"] == "codex/phase2-reverse-ascii-v1", "next task branch differs")
+        require(head_tree["src/reverse-ascii.mjs"][:2] == ("100644", "blob"), "non-regular next source")
+        require(len(blob(head, "src/reverse-ascii.mjs")) <= 16 * 1024, "next source exceeds size limit")
+        outcome = subprocess.run(["node", "--test", "--test-reporter=tap", "test/reverse-ascii.test.mjs"], capture_output=True, text=True, encoding="utf-8")
+        print(outcome.stdout)
+        require(outcome.returncode == 0, "next task functional tests failed")
+        for field, value in [("tests", 8), ("pass", 8), ("fail", 0), ("skipped", 0), ("cancelled", 0), ("todo", 0)]:
+            require(re.search(r"^# " + field + " " + str(value) + r"$", outcome.stdout, re.M), "next task test count differs")
+        print("PASS: one approved next-task source; eight functional tests passed.")
+        raise SystemExit(0)
+    require(changed == [b"src/slugify.mjs", b""], "normal PR must change one approved source only")
     require(head_tree["src/slugify.mjs"][:2] == ("100644", "blob"), "non-regular source")
     require(len(blob(head, "src/slugify.mjs")) <= 16 * 1024, "source exceeds 16 KB")
     require(git("diff", "--numstat", base + "..." + head).strip(), "empty source change")
