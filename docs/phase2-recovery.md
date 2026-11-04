@@ -1,5 +1,9 @@
 # Recovery-v1 for the observed Phase 2 failure
 
+Historical procedure: recovery-v1 was consumed by run 41891536813. It must never
+be dispatched again. See [the scheduling correction](phase2-scheduling.md) for the
+single separately authorized recovery-v2 replacement and required hosted proof.
+
 No paid execution is authorized by this repair. Original run
 [41880752255](https://github.com/rpickett578/gh-aw-codex-pilot/actions/runs/41880752255)
 failed at main fa995cbf91f4e7d02916e35f0fd8f9979a8ad298. It published authentic clean

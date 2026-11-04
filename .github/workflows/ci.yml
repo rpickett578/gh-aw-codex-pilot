@@ -6,11 +6,67 @@ on:
 permissions:
   contents: read
 jobs:
+  schedule_route:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    permissions: {}
+    outputs:
+      repair: ${{ steps.route.outputs.repair }}
+    steps:
+      - id: route
+        run: echo 'repair=false' >> "$GITHUB_OUTPUT"
+  schedule_repair:
+    needs: schedule_route
+    if: needs.schedule_route.outputs.repair == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    permissions: {}
+    steps:
+      - run: echo 'This must be skipped in the clean-review fixture'
+  schedule_continue:
+    needs: [schedule_route, schedule_repair]
+    if: always() && needs.schedule_route.result == 'success' && (needs.schedule_repair.result == 'success' || (needs.schedule_repair.result == 'skipped' && needs.schedule_route.outputs.repair == 'false'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    permissions: {}
+    steps:
+      - run: echo 'Clean review admitted without repair'
+  schedule_next:
+    needs: [schedule_route, schedule_continue]
+    if: ${{ !cancelled() && needs.schedule_route.result == 'success' && needs.schedule_continue.result == 'success' }}
+    uses: ./.github/workflows/phase2-scheduling-worker.yml
+    permissions: {}
+  scheduling_proof:
+    needs: [schedule_route, schedule_repair, schedule_continue, schedule_next]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    permissions: {}
+    steps:
+      - name: Require real GitHub scheduling and reusable-job output
+        env:
+          ROUTE: ${{ needs.schedule_route.result }}
+          REPAIR: ${{ needs.schedule_repair.result }}
+          CONTINUE: ${{ needs.schedule_continue.result }}
+          NEXT: ${{ needs.schedule_next.result }}
+          PROOF: ${{ needs.schedule_next.outputs.proof }}
+        run: |
+          test "$ROUTE" = success
+          test "$REPAIR" = skipped
+          test "$CONTINUE" = success
+          test "$NEXT" = success
+          test "$PROOF" = fixture-next-executed
   verify:
     name: synthetic-tests
+    needs: scheduling_proof
+    if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
+      - name: Fail required check if real scheduling proof failed or skipped
+        env:
+          PROOF_RESULT: ${{ needs.scheduling_proof.result }}
+        run: test "$PROOF_RESULT" = success
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ github.event.pull_request.head.sha }}
@@ -30,7 +86,9 @@ jobs:
         run: |
           set -euo pipefail
           verifier="$RUNNER_TEMP/verify-pilot-ci.py"
-          if [ "$BASE_SHA" = fa995cbf91f4e7d02916e35f0fd8f9979a8ad298 ] && [ "$HEAD_BRANCH" = codex/phase2-recovery-v1 ]; then
+          if [ "$BASE_SHA" = 40ebfd180e4285167d62e9d0ce680b73af5a1116 ] && [ "$HEAD_BRANCH" = codex/phase2-scheduling-v2 ]; then
+            git show "$HEAD_SHA:scripts/verify-phase2-scheduling.py" > "$verifier"
+          elif [ "$BASE_SHA" = fa995cbf91f4e7d02916e35f0fd8f9979a8ad298 ] && [ "$HEAD_BRANCH" = codex/phase2-recovery-v1 ]; then
             git show "$HEAD_SHA:scripts/verify-phase2-recovery.py" > "$verifier"
           elif [ "$BASE_SHA" = fe6bf5b4a385da3957b0f5b1678b163510da47cf ] && [ "$HEAD_BRANCH" = codex/phase2-registration-repair ]; then
             git show "$HEAD_SHA:scripts/verify-phase2-registration.py" > "$verifier"
