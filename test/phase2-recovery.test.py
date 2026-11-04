@@ -279,7 +279,9 @@ class RecoveryTests(unittest.TestCase):
         new = {"id":new_id,"display_title":p.RECOVERY_KEY,"head_sha":"1"*40,"run_attempt":1}
         consumed = {"id":p.CONSUMED_RECOVERY_RUN,"display_title":p.RECOVERY_V1_KEY,"head_sha":p.CONSUMED_RECOVERY_SHA,
                     "status":"completed","conclusion":"success","run_attempt":1}
-        return [old,new,consumed]
+        v2 = {"id":p.CONSUMED_V2_RUN,"display_title":p.RECOVERY_V2_KEY,"head_sha":p.CONSUMED_V2_SHA,
+              "status":"completed","conclusion":"failure","run_attempt":1}
+        return [old,new,consumed,v2]
 
     def test_original_key_remains_consumed(self):
         with self.assertRaises(ValueError): p.one_attempt(self.rows(), "101")

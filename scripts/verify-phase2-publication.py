@@ -15,6 +15,7 @@ REPO = "rpickett578/gh-aw-codex-pilot"
 FILES = {
     ".gitattributes",
     ".github/workflows/ci.yml", ".github/workflows/phase2-next.md", ".github/workflows/phase2-next.lock.yml",
+    ".github/workflows/phase2-chain.yml", "scripts/phase2.py", "test/phase2-scheduling.test.py",
     "scripts/workspace_guard.py", "scripts/verify-phase2-publication.py",
     "test/phase2-recovery.test.py", "test/phase2-publication.test.py", "test/native-publication-contract.cjs",
     "evidence/41901264550/reverse-ascii.patch", "evidence/41901264550/provenance.json",

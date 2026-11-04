@@ -1,6 +1,7 @@
 # Skip-aware scheduling correction — no paid dispatch
 
-Historical activation: recovery-v2 was consumed by run 41901264550. Its automatic
+Historical activation only (do not execute the commands below; current recovery-v3
+preparation and activation are in docs/phase2-publication.md): recovery-v2 was consumed by run 41901264550. Its automatic
 handoff worked, but native PR publication failed. Do not use the activation below.
 See [the publication contract repair](phase2-publication.md); no new key is granted.
 
