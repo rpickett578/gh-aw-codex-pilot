@@ -61,6 +61,7 @@ safe-outputs:
       - src/slugify.mjs
     max-patch-files: 1
     max-patch-size: 16
+    github-token: ${{ secrets.GH_AW_CI_TRIGGER_TOKEN }}
     github-token-for-extra-empty-commit: ${{ secrets.GH_AW_CI_TRIGGER_TOKEN }}
 jobs:
   agent:
