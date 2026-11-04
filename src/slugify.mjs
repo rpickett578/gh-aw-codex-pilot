@@ -1,4 +1,10 @@
-// Deliberately defective synthetic starting point; the worker must fix this.
 export function slugify(input) {
-  return input.toLowerCase().replace(' ', '-');
+  if (typeof input !== 'string') {
+    throw new TypeError('Expected a string');
+  }
+
+  return input
+    .replace(/[^A-Za-z0-9]+/g, '-')
+    .toLowerCase()
+    .replace(/^-|-$/g, '');
 }
