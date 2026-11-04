@@ -277,7 +277,9 @@ class RecoveryTests(unittest.TestCase):
     def rows(self, new_id=101):
         old = dict(FIXTURE["run"])
         new = {"id":new_id,"display_title":p.RECOVERY_KEY,"head_sha":"1"*40,"run_attempt":1}
-        return [old,new]
+        consumed = {"id":p.CONSUMED_RECOVERY_RUN,"display_title":p.RECOVERY_V1_KEY,"head_sha":p.CONSUMED_RECOVERY_SHA,
+                    "status":"completed","conclusion":"success","run_attempt":1}
+        return [old,new,consumed]
 
     def test_original_key_remains_consumed(self):
         with self.assertRaises(ValueError): p.one_attempt(self.rows(), "101")
@@ -306,7 +308,7 @@ class RecoveryTests(unittest.TestCase):
         common={"GITHUB_REPOSITORY":p.REPO,"GITHUB_WORKFLOW_SHA":"1"*40,"PHASE2_EXECUTION_SHA":"1"*40,
                 "GITHUB_RUN_ATTEMPT":"1","PHASE2_RECOVERY_KEY":p.RECOVERY_KEY}
         for changes in [{"PHASE2_EXECUTION_SHA":""},{"PHASE2_RECOVERY_KEY":""},
-                        {"PHASE2_RECOVERY_KEY":p.KEY+"-recovery-v2"},{"GITHUB_RUN_ATTEMPT":"2"}]:
+                        {"PHASE2_RECOVERY_KEY":p.KEY+"-unknown-recovery"},{"GITHUB_RUN_ATTEMPT":"2"}]:
             with patch.dict(os.environ, dict(common, **changes), clear=True), patch.object(p,"api") as request:
                 with self.assertRaises(ValueError): p.entry()
                 request.assert_not_called()

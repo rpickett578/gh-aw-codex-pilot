@@ -21,9 +21,12 @@ BRANCH = "codex/pilotfix/ascii-slug-normalization-58cc9ff5c8519ae2"
 TASK = "reverse-ascii-v1"
 NEXT_BRANCH = "codex/phase2-reverse-ascii-v1"
 KEY = "phase2-2-" + HEAD + "-" + TASK
-RECOVERY_KEY = KEY + "-recovery-v1"
+RECOVERY_V1_KEY = KEY + "-recovery-v1"
+RECOVERY_KEY = KEY + "-recovery-v2"
 FAILED_RUN = 41880752255
 FAILED_SHA = "fa995cbf91f4e7d02916e35f0fd8f9979a8ad298"
+CONSUMED_RECOVERY_RUN = 41891536813
+CONSUMED_RECOVERY_SHA = "40ebfd180e4285167d62e9d0ce680b73af5a1116"
 SOURCE = "src/slugify.mjs"
 NEXT_SOURCE = "src/reverse-ascii.mjs"
 
@@ -276,7 +279,13 @@ def recovery_admission(runs, run_id):
     old = previous[0]
     require(old["display_title"] == KEY and old["head_sha"] == FAILED_SHA and old["status"] == "completed"
             and old["conclusion"] == "failure" and old["run_attempt"] == 1, "original failure provenance differs")
-    require(all(r["id"] in [FAILED_RUN, int(run_id)] for r in runs), "another Phase 2 attempt exists")
+    prior = [r for r in runs if r["id"] == CONSUMED_RECOVERY_RUN]
+    require(len(prior) == 1, "exact consumed recovery-v1 run missing")
+    prior = prior[0]
+    require(prior["display_title"] == RECOVERY_V1_KEY and prior["head_sha"] == CONSUMED_RECOVERY_SHA
+            and prior["status"] == "completed" and prior["conclusion"] == "success" and prior["run_attempt"] == 1,
+            "consumed recovery-v1 provenance differs")
+    require(all(r["id"] in [FAILED_RUN, CONSUMED_RECOVERY_RUN, int(run_id)] for r in runs), "another Phase 2 attempt exists")
     current = [r for r in runs if r["id"] == int(run_id)]
     require(len(current) == 1 and current[0]["display_title"] == RECOVERY_KEY
             and current[0]["head_sha"] == os.environ["GITHUB_WORKFLOW_SHA"] and current[0]["run_attempt"] == 1,
@@ -292,13 +301,46 @@ def validate_repair_head(sha, repair_sha, head_commit=None, repair_commit=None):
                 "CI trigger child is not empty")
 
 
+def validate_completion(results, repair_required, number, url, cancelled):
+    require(cancelled == "false", "workflow cancelled")
+    require(all(results.get(job) == "success" for job in ["admit", "review", "route", "continue", "next"]),
+            "mandatory Phase 2 job failed or skipped")
+    require(repair_required in ["true", "false"], "repair disposition missing")
+    require(results.get("repair") == ("success" if repair_required == "true" else "skipped"),
+            "repair result contradicts review disposition")
+    require(isinstance(number, str) and re.fullmatch(r"[1-9][0-9]*", number), "native next PR number missing")
+    require(url == f"https://github.com/{REPO}/pull/{number}", "native next PR URL missing or invalid")
+
+
+def accept_next_pr(number, url, pr, files, items):
+    require(pr["number"] == int(number) and pr["html_url"] == url and pr["state"] == "open"
+            and pr["draft"] and not pr["merged"], "next PR must exist, be Draft and remain unmerged")
+    require(pr["head"]["repo"]["full_name"] == REPO == pr["base"]["repo"]["full_name"]
+            and pr["head"]["ref"] == NEXT_BRANCH and pr["base"]["ref"] == "main", "next PR scope differs")
+    require([f["filename"] for f in files] == [NEXT_SOURCE], "next PR changed unrelated files")
+    published = [i for i in items if i.get("type") == "create_pull_request"]
+    require(len(published) == 1 and published[0]["status"] == "success" and published[0]["repo"] == REPO
+            and published[0]["number"] == int(number) and published[0]["url"] == url,
+            "exact current-run native PR publication missing")
+
+
 def entry():
     require(os.environ["GITHUB_REPOSITORY"] == REPO, "pilot repository only")
     require(os.environ["GITHUB_RUN_ATTEMPT"] == "1", "reruns forbidden")
     require(os.environ.get("PHASE2_EXECUTION_SHA") == os.environ["GITHUB_WORKFLOW_SHA"], "separate reviewed execution authorization missing")
-    require(os.environ.get("PHASE2_RECOVERY_KEY") == RECOVERY_KEY, "explicit recovery-v1 admission required")
+    require(os.environ.get("PHASE2_RECOVERY_KEY") == RECOVERY_KEY, "explicit recovery-v2 admission required")
     stage = sys.argv[1]
-    if stage == "admit":
+    if stage == "accept":
+        results = {job: os.environ.get(job.upper() + "_RESULT", "") for job in ["admit", "review", "route", "repair", "continue", "next"]}
+        number, url = os.environ.get("NEXT_PR_NUMBER", ""), os.environ.get("NEXT_PR_URL", "")
+        validate_completion(results, os.environ.get("REPAIR_REQUIRED"), number, url, os.environ.get("RUN_CANCELLED"))
+        validate_pr(api("/pulls/2"), os.environ["EXPECTED_HEAD"])
+        review_evidence(wait=True)
+        pr = api("/pulls/" + number)
+        accept_next_pr(number, url, pr, api("/pulls/" + number + "/files"), publication_items(os.environ["GITHUB_RUN_ID"]))
+        actual_ci(pr["head"]["sha"], wait=True)
+        print("ACCEPTED: exact native Draft PR " + url + " at " + pr["head"]["sha"])
+    elif stage == "admit":
         require(os.environ["GITHUB_REF"] == "refs/heads/main", "reviewed main installation only")
         runs = api("/actions/workflows/phase2-chain.yml/runs?event=workflow_dispatch&per_page=100")["workflow_runs"]
         recovery_admission(runs, os.environ["GITHUB_RUN_ID"])

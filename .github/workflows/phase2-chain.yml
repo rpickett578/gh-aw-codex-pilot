@@ -1,14 +1,14 @@
 name: Phase 2 bounded synthetic chain
-run-name: phase2-2-f50e1a8ccc84cee5812c31938a31c93a078e7103-reverse-ascii-v1-recovery-v1
+run-name: phase2-2-f50e1a8ccc84cee5812c31938a31c93a078e7103-reverse-ascii-v1-recovery-v2
 on:
   workflow_dispatch:
     inputs:
       recovery_key:
-        description: Explicit single-use recovery-v1 authorization (separate approval required)
+        description: Explicit single-use recovery-v2 authorization (separate approval required)
         required: true
         type: choice
         options:
-          - phase2-2-f50e1a8ccc84cee5812c31938a31c93a078e7103-reverse-ascii-v1-recovery-v1
+          - phase2-2-f50e1a8ccc84cee5812c31938a31c93a078e7103-reverse-ascii-v1-recovery-v2
 permissions: {}
 concurrency:
   group: phase2-2-f50e1a8ccc84cee5812c31938a31c93a078e7103-reverse-ascii-v1
@@ -108,6 +108,7 @@ jobs:
         run: python3 scripts/phase2.py continue
   next:
     needs: [route, continue]
+    if: ${{ !cancelled() && needs.route.result == 'success' && needs.continue.result == 'success' }}
     uses: ./.github/workflows/phase2-next.lock.yml
     with:
       head_sha: ${{ needs.continue.outputs.head_sha }}
@@ -120,3 +121,37 @@ jobs:
       actions: read
       checks: read
     secrets: inherit
+  acceptance:
+    needs: [admit, review, route, repair, continue, next]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      pull-requests: read
+    steps:
+      - name: Reject cancellation
+        if: cancelled()
+        run: exit 1
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Require completed handoff and exact native Draft PR with real CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ADMIT_RESULT: ${{ needs.admit.result }}
+          REVIEW_RESULT: ${{ needs.review.result }}
+          ROUTE_RESULT: ${{ needs.route.result }}
+          REPAIR_RESULT: ${{ needs.repair.result }}
+          CONTINUE_RESULT: ${{ needs.continue.result }}
+          NEXT_RESULT: ${{ needs.next.result }}
+          REPAIR_REQUIRED: ${{ needs.route.outputs.repair }}
+          REVIEW_ID: ${{ needs.route.outputs.review_id }}
+          EXPECTED_HEAD: ${{ needs.continue.outputs.head_sha }}
+          NEXT_PR_NUMBER: ${{ needs.next.outputs.created_pr_number }}
+          NEXT_PR_URL: ${{ needs.next.outputs.created_pr_url }}
+          RUN_CANCELLED: ${{ contains(needs.*.result, 'cancelled') }}
+        run: python3 scripts/phase2.py accept
