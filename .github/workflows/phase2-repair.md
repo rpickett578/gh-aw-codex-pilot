@@ -26,7 +26,6 @@ tools:
   bash: true
 env:
   PHASE2_EXECUTION_SHA: ${{ vars.PHASE2_EXECUTION_SHA }}
-  EXPECTED_HEAD: ${{ inputs.head_sha }}
   REVIEW_ID: ${{ inputs.review_id }}
   PHASE2_STAGE: repair
 pre-agent-steps:
