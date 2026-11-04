@@ -1,0 +1,22 @@
+{
+  "base": "b876867631bc89c7b5775c98c72f1b44a16c963f",
+  "branch": "codex/phase2-publication-contract",
+  "files": {
+    ".gitattributes": "e81e8cfc5cf0ff8448c947eba0e536ead2d5417ae076dfe9cebc13dc490e7901",
+    ".github/workflows/ci.yml": "bee6f4a60f8066fd1b543135c105a4028007e5b8d03cec51e3bf717db4938ab2",
+    ".github/workflows/phase2-chain.yml": "0de3a1cb916cc299f09151dd5ea719ba8bf5972597a2be21714f1d686c588116",
+    ".github/workflows/phase2-next.lock.yml": "0f88f312924e682acde41f7c8d9115a5180a78fd92a9d6b4ad0aa0038530abca",
+    ".github/workflows/phase2-next.md": "0bdef160897179f5ea703ffafc787f879248b1343438ef8d1a523687d6310430",
+    "docs/phase2-publication.md": "f57753f8730b3f6b2a618250f96121285a8eb333790c32bdd3b8925e72d35a28",
+    "docs/phase2-scheduling.md": "0af87edfbdee828d9a0ab0390865c0cce62b72d4e0cf4bdf0d648f47f36a6dc9",
+    "evidence/41901264550/provenance.json": "5727e2c0325bf743d59708b428c8fcbd1762452d99c41db7a1e9d986a238af90",
+    "evidence/41901264550/reverse-ascii.patch": "66d9a68d52da597b48fef71b4291a0d83747da156ee958e1d72230fc657b29ce",
+    "scripts/phase2.py": "364c5c85e68220715dbd5ad32ce89261ed2d2172711df55d0da162882c577bf2",
+    "scripts/verify-phase2-publication.py": "d4de556f9f9c114112cfbee5f04caa18ed754a463503a7f21dbc59128ad9bcf6",
+    "scripts/workspace_guard.py": "c29a6ce5e743481307854649b13993821c61dda802556816e643f7ebbb809d90",
+    "test/native-publication-contract.cjs": "a10c909cf17942940c3a59a9f0b6c5f9094bf6130b55645f7657ed66541136c9",
+    "test/phase2-publication.test.py": "6f3262d39eb0ae88f3279b7d453f42e19d4a4d91d675d1a5ded23d42e48b5b9d",
+    "test/phase2-recovery.test.py": "e229f9ed97446cc850f0e2360bd93145330976f64607662fdc297e1b46bf38e6",
+    "test/phase2-scheduling.test.py": "251d0a30cc2d28e7d6fc411f2d663a69298b114844aca4d6fb23f2a32eb25d2e"
+  }
+}

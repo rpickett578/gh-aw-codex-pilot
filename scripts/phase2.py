@@ -22,11 +22,14 @@ TASK = "reverse-ascii-v1"
 NEXT_BRANCH = "codex/phase2-reverse-ascii-v1"
 KEY = "phase2-2-" + HEAD + "-" + TASK
 RECOVERY_V1_KEY = KEY + "-recovery-v1"
-RECOVERY_KEY = KEY + "-recovery-v2"
+RECOVERY_V2_KEY = KEY + "-recovery-v2"
+RECOVERY_KEY = KEY + "-recovery-v3"
 FAILED_RUN = 41880752255
 FAILED_SHA = "fa995cbf91f4e7d02916e35f0fd8f9979a8ad298"
 CONSUMED_RECOVERY_RUN = 41891536813
 CONSUMED_RECOVERY_SHA = "40ebfd180e4285167d62e9d0ce680b73af5a1116"
+CONSUMED_V2_RUN = 41901264550
+CONSUMED_V2_SHA = "b876867631bc89c7b5775c98c72f1b44a16c963f"
 SOURCE = "src/slugify.mjs"
 NEXT_SOURCE = "src/reverse-ascii.mjs"
 
@@ -285,7 +288,13 @@ def recovery_admission(runs, run_id):
     require(prior["display_title"] == RECOVERY_V1_KEY and prior["head_sha"] == CONSUMED_RECOVERY_SHA
             and prior["status"] == "completed" and prior["conclusion"] == "success" and prior["run_attempt"] == 1,
             "consumed recovery-v1 provenance differs")
-    require(all(r["id"] in [FAILED_RUN, CONSUMED_RECOVERY_RUN, int(run_id)] for r in runs), "another Phase 2 attempt exists")
+    v2 = [r for r in runs if r["id"] == CONSUMED_V2_RUN]
+    require(len(v2) == 1, "exact consumed recovery-v2 run missing")
+    v2 = v2[0]
+    require(v2["display_title"] == RECOVERY_V2_KEY and v2["head_sha"] == CONSUMED_V2_SHA
+            and v2["status"] == "completed" and v2["conclusion"] == "failure" and v2["run_attempt"] == 1,
+            "consumed recovery-v2 provenance differs")
+    require(all(r["id"] in [FAILED_RUN, CONSUMED_RECOVERY_RUN, CONSUMED_V2_RUN, int(run_id)] for r in runs), "another Phase 2 attempt exists")
     current = [r for r in runs if r["id"] == int(run_id)]
     require(len(current) == 1 and current[0]["display_title"] == RECOVERY_KEY
             and current[0]["head_sha"] == os.environ["GITHUB_WORKFLOW_SHA"] and current[0]["run_attempt"] == 1,
@@ -328,8 +337,10 @@ def entry():
     require(os.environ["GITHUB_REPOSITORY"] == REPO, "pilot repository only")
     require(os.environ["GITHUB_RUN_ATTEMPT"] == "1", "reruns forbidden")
     require(os.environ.get("PHASE2_EXECUTION_SHA") == os.environ["GITHUB_WORKFLOW_SHA"], "separate reviewed execution authorization missing")
-    require(os.environ.get("PHASE2_RECOVERY_KEY") == RECOVERY_KEY, "explicit recovery-v2 admission required")
+    require(os.environ.get("PHASE2_RECOVERY_KEY") == RECOVERY_KEY, "explicit recovery-v3 admission required")
     stage = sys.argv[1]
+    require(stage not in ["repair", "repair-after", "publish-repair"],
+            "recovery-v3 is clean-path only; repair publication contract remains blocked")
     if stage == "accept":
         results = {job: os.environ.get(job.upper() + "_RESULT", "") for job in ["admit", "review", "route", "repair", "continue", "next"]}
         number, url = os.environ.get("NEXT_PR_NUMBER", ""), os.environ.get("NEXT_PR_URL", "")
@@ -358,6 +369,7 @@ def entry():
         review, evidence = review_evidence(wait=True)
         if evidence["findings"]:
             validate_findings(evidence, source_at(HEAD))
+            raise ValueError("recovery-v3 is clean-path only; genuine findings require separate repair authorization")
         output(repair=str(bool(evidence["findings"])).lower(), review_id=review["id"])
         print("Repair: " + ("required by reproducible finding" if evidence["findings"] else "NOT APPLICABLE; clean review"))
     elif stage in ["repair", "repair-after", "publish-repair"]:

@@ -1,0 +1,19 @@
+{
+  "run": 41901264550,
+  "main_sha": "b876867631bc89c7b5775c98c72f1b44a16c963f",
+  "agent_artifact_id": 13358238375,
+  "source_file": "src/reverse-ascii.mjs",
+  "patch_sha256": "66d9a68d52da597b48fef71b4291a0d83747da156ee958e1d72230fc657b29ce",
+  "observed_tests": {
+    "before": {
+      "pass": 0,
+      "fail": 8
+    },
+    "after": {
+      "pass": 8,
+      "fail": 0
+    }
+  },
+  "status": "Successful uncommitted candidate; native PR call failed because no commit existed. This evidence is not a published PR or successful native CI.",
+  "source": "agent-stdio.log item.completed command_execution: git diff --check; git diff --stat; git diff -- src/reverse-ascii.mjs; git status --short"
+}

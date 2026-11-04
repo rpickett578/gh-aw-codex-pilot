@@ -1,14 +1,14 @@
 name: Phase 2 bounded synthetic chain
-run-name: phase2-2-f50e1a8ccc84cee5812c31938a31c93a078e7103-reverse-ascii-v1-recovery-v2
+run-name: phase2-2-f50e1a8ccc84cee5812c31938a31c93a078e7103-reverse-ascii-v1-recovery-v3
 on:
   workflow_dispatch:
     inputs:
       recovery_key:
-        description: Explicit single-use recovery-v2 authorization (separate approval required)
+        description: Explicit single-use recovery-v3 authorization (separate approval required)
         required: true
         type: choice
         options:
-          - phase2-2-f50e1a8ccc84cee5812c31938a31c93a078e7103-reverse-ascii-v1-recovery-v2
+          - phase2-2-f50e1a8ccc84cee5812c31938a31c93a078e7103-reverse-ascii-v1-recovery-v3
 permissions: {}
 concurrency:
   group: phase2-2-f50e1a8ccc84cee5812c31938a31c93a078e7103-reverse-ascii-v1

@@ -75,20 +75,56 @@ class ConsumedKeyTests(unittest.TestCase):
     def history(self):
         return [{"id":p.FAILED_RUN,"display_title":p.KEY,"head_sha":p.FAILED_SHA,"status":"completed","conclusion":"failure","run_attempt":1},
                 {"id":p.CONSUMED_RECOVERY_RUN,"display_title":p.RECOVERY_V1_KEY,"head_sha":p.CONSUMED_RECOVERY_SHA,"status":"completed","conclusion":"success","run_attempt":1},
+                {"id":p.CONSUMED_V2_RUN,"display_title":p.RECOVERY_V2_KEY,"head_sha":p.CONSUMED_V2_SHA,"status":"completed","conclusion":"failure","run_attempt":1},
                 {"id":101,"display_title":p.RECOVERY_KEY,"head_sha":"1"*40,"run_attempt":1}]
 
-    def test_both_prior_keys_remain_consumed(self):
+    def test_all_three_prior_keys_remain_consumed(self):
         rows=self.history()
-        for key in [p.KEY,p.RECOVERY_V1_KEY]:
+        for key in [p.KEY,p.RECOVERY_V1_KEY,p.RECOVERY_V2_KEY]:
             with self.assertRaises(ValueError): p.one_attempt(rows,"101",key)
 
-    def test_only_one_explicit_v2_with_exact_two_prior_runs(self):
+    def test_only_one_explicit_v3_with_exact_three_prior_runs(self):
         with patch.dict(os.environ,{"GITHUB_WORKFLOW_SHA":"1"*40}):
             p.recovery_admission(self.history(),"101")
             rows=self.history(); rows.append(dict(rows[-1],id=102))
             with self.assertRaises(ValueError): p.recovery_admission(rows,"102")
             rows=self.history(); rows[1]["run_attempt"]=2
             with self.assertRaises(ValueError): p.recovery_admission(rows,"101")
+
+    def test_v2_provenance_is_exact_and_cannot_be_omitted(self):
+        with patch.dict(os.environ,{"GITHUB_WORKFLOW_SHA":"1"*40}):
+            for field,value in [("id",1),("display_title",p.KEY),("head_sha","0"*40),
+                                ("status","in_progress"),("conclusion","success"),("run_attempt",2)]:
+                rows=self.history(); rows[2][field]=value
+                with self.subTest(field=field), self.assertRaises(ValueError): p.recovery_admission(rows,"101")
+            with self.assertRaises(ValueError): p.recovery_admission(self.history()[:2]+self.history()[3:],"101")
+
+    def test_consumed_keys_and_unknown_versions_cannot_enter(self):
+        env={"GITHUB_REPOSITORY":p.REPO,"GITHUB_RUN_ATTEMPT":"1","GITHUB_WORKFLOW_SHA":"1"*40,
+             "PHASE2_EXECUTION_SHA":"1"*40}
+        for key in [p.KEY,p.RECOVERY_V1_KEY,p.RECOVERY_V2_KEY,p.KEY+"-recovery-v4"]:
+            with patch.dict(os.environ,dict(env,PHASE2_RECOVERY_KEY=key),clear=True), patch.object(p,"api") as api:
+                with self.assertRaises(ValueError): p.entry()
+                api.assert_not_called()
+
+    def test_v3_repair_is_blocked_before_api_or_worker(self):
+        env={"GITHUB_REPOSITORY":p.REPO,"GITHUB_RUN_ATTEMPT":"1","GITHUB_WORKFLOW_SHA":"1"*40,
+             "PHASE2_EXECUTION_SHA":"1"*40,"PHASE2_RECOVERY_KEY":p.RECOVERY_KEY}
+        for stage in ["repair","repair-after","publish-repair"]:
+            with patch.dict(os.environ,env,clear=True), patch.object(sys,"argv",["phase2.py",stage]), patch.object(p,"api") as api:
+                with self.assertRaisesRegex(ValueError,"clean-path only"): p.entry()
+                api.assert_not_called()
+
+    def test_genuine_findings_fail_route_without_emitting_repair_admission(self):
+        env={"GITHUB_REPOSITORY":p.REPO,"GITHUB_RUN_ATTEMPT":"1","GITHUB_WORKFLOW_SHA":"1"*40,
+             "PHASE2_EXECUTION_SHA":"1"*40,"PHASE2_RECOVERY_KEY":p.RECOVERY_KEY}
+        with patch.dict(os.environ,env,clear=True), patch.object(sys,"argv",["phase2.py","route"]), \
+             patch.object(p,"api",return_value={}), patch.object(p,"validate_pr"), \
+             patch.object(p,"review_evidence",return_value=({"id":123},{"findings":[{}]})), \
+             patch.object(p,"source_at",return_value=b"source"), patch.object(p,"validate_findings") as reproduce, \
+             patch.object(p,"output") as emit:
+            with self.assertRaisesRegex(ValueError,"clean-path only"): p.entry()
+            reproduce.assert_called_once(); emit.assert_not_called()
 
 
 class WiringTests(unittest.TestCase):

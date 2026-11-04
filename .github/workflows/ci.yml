@@ -75,6 +75,19 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24.14.1
+      - name: Prepare exact official runtime for no-AI native publication contract
+        if: github.event.pull_request.base.sha == 'b876867631bc89c7b5775c98c72f1b44a16c963f' && github.event.pull_request.head.ref == 'codex/phase2-publication-contract' && github.event.pull_request.head.repo.full_name == github.repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          native="$RUNNER_TEMP/pilot-gh-aw-native"
+          git init "$native"
+          git -C "$native" remote add origin https://github.com/github/gh-aw.git
+          git -C "$native" sparse-checkout set actions/setup/js actions/setup/md
+          git -C "$native" fetch --depth=1 --filter=blob:none origin 0627fdbe4beb5f3b71aa569f8d97150b87f2111a
+          git -C "$native" checkout --detach FETCH_HEAD
+          test "$(git -C "$native" rev-parse HEAD)" = 0627fdbe4beb5f3b71aa569f8d97150b87f2111a
+          echo "GH_AW_NATIVE_ACTIONS=$native/actions/setup/js" >> "$GITHUB_ENV"
       - name: Validate exact installation or the scoped functional tests
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -86,7 +99,9 @@ jobs:
         run: |
           set -euo pipefail
           verifier="$RUNNER_TEMP/verify-pilot-ci.py"
-          if [ "$BASE_SHA" = 40ebfd180e4285167d62e9d0ce680b73af5a1116 ] && [ "$HEAD_BRANCH" = codex/phase2-scheduling-v2 ]; then
+          if [ "$BASE_SHA" = b876867631bc89c7b5775c98c72f1b44a16c963f ] && [ "$HEAD_BRANCH" = codex/phase2-publication-contract ]; then
+            git show "$HEAD_SHA:scripts/verify-phase2-publication.py" > "$verifier"
+          elif [ "$BASE_SHA" = 40ebfd180e4285167d62e9d0ce680b73af5a1116 ] && [ "$HEAD_BRANCH" = codex/phase2-scheduling-v2 ]; then
             git show "$HEAD_SHA:scripts/verify-phase2-scheduling.py" > "$verifier"
           elif [ "$BASE_SHA" = fa995cbf91f4e7d02916e35f0fd8f9979a8ad298 ] && [ "$HEAD_BRANCH" = codex/phase2-recovery-v1 ]; then
             git show "$HEAD_SHA:scripts/verify-phase2-recovery.py" > "$verifier"

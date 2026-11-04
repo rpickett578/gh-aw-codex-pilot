@@ -38,6 +38,7 @@ pre-agent-steps:
       set -euo pipefail
       gh api "repos/rpickett578/gh-aw-codex-pilot/contents/scripts/phase2.py?ref=$GITHUB_WORKFLOW_SHA" --jq .content | base64 --decode > "$RUNNER_TEMP/phase2.py"
       python3 "$RUNNER_TEMP/phase2.py" "$PHASE2_STAGE"
+      gh api "repos/rpickett578/gh-aw-codex-pilot/contents/evidence/41901264550/reverse-ascii.patch?ref=$GITHUB_WORKFLOW_SHA" --jq .content | base64 --decode > /tmp/gh-aw/phase2-preserved-candidate.patch
       gh api "repos/rpickett578/gh-aw-codex-pilot/contents/scripts/workspace_guard.py?ref=$GITHUB_WORKFLOW_SHA" --jq .content | base64 --decode > "$RUNNER_TEMP/phase2-workspace-guard.py"
       python3 "$RUNNER_TEMP/phase2-workspace-guard.py" capture "$PHASE2_STAGE"
 post-steps:
@@ -137,10 +138,19 @@ any character outside ASCII U+0000â€“U+007F with RangeError; otherwise retu
 characters in reverse order, preserving spaces, controls, punctuation and case.
 Empty input returns empty. No dependencies or transliteration.
 
-Run node --test test/reverse-ascii.test.mjs before and after. The immutable eight
-tests initially fail. Modify only src/reverse-ascii.mjs. Publish one Draft PR with
-tool branch phase2-reverse-ascii-v1 (configured codex/ prefix yields the fixed
-codex/phase2-reverse-ascii-v1 branch). Do not merge PR #2 or depend on its merge.
+Run node --test test/reverse-ascii.test.mjs before and after. Reuse the already
+successful candidate at /tmp/gh-aw/phase2-preserved-candidate.patch: inspect it,
+then git apply --check and git apply it. Do not regenerate identical code.
+The immutable eight tests initially fail; the preserved candidate passes them.
+Create the exact local branch with git switch -c phase2-reverse-ascii-v1 from
+the pinned checkout HEAD. Stage only src/reverse-ascii.mjs using its explicit path
+and create exactly one ordinary commit. Do not use git add ., amend, reset,
+rebase, merge, force, push, alter remotes or create another branch. Verify the one
+commit has the pinned checkout as its only parent, contains only the approved
+source and leaves no uncommitted changes. Do not stage trusted .github/AGENTS overlays.
+Call native create_pull_request exactly once with draft=true and branch exactly
+phase2-reverse-ascii-v1, matching git branch --show-current. Then STOP. The native
+tool generates the bundle; the separate safe-output publisher prefixes the remote
+branch as codex/phase2-reverse-ascii-v1 and publishes the Draft PR. Never push manually.
+Do not merge PR #2 or depend on its merge.
 Do not create another task or invoke another worker. Leave the Draft PR unmerged.
-
-Use only uncommitted working-tree edits; do not commit or change Git HEAD.
