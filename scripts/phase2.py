@@ -96,10 +96,12 @@ def validate_publication(review, run, jobs, items):
     require(run["event"] == "workflow_dispatch" and run["path"] == ".github/workflows/phase2-chain.yml"
             and run["run_attempt"] == 1 and run["actor"]["login"] == "rpickett578", "publication run differs")
     publishers = [j for j in jobs if j["name"] == "review / safe_outputs"]
-    require(len(publishers) == 1, "publisher job missing or ambiguous")
+    require(publishers, "publisher job metadata not yet visible")
+    require(len(publishers) == 1, "publisher job ambiguous")
     job = publishers[0]
-    require(job["run_id"] == run["id"] and job["head_sha"] == run["head_sha"]
-            and job["status"] == "completed" and job["conclusion"] == "success", "publisher not successful on this run")
+    require(job["run_id"] == run["id"] and job["head_sha"] == run["head_sha"], "publisher identity differs")
+    require(job["status"] == "completed", "publisher metadata not yet complete")
+    require(job["conclusion"] == "success", "publisher failed")
     submitted = datetime.fromisoformat(review["submitted_at"].replace("Z", "+00:00"))
     require(datetime.fromisoformat(job["started_at"].replace("Z", "+00:00")) <= submitted <=
             datetime.fromisoformat(job["completed_at"].replace("Z", "+00:00")), "review outside publisher interval")
@@ -117,7 +119,8 @@ def publication_items(run_id):
     data = api(f"/actions/runs/{run_id}/artifacts?per_page=100")
     require(data["total_count"] < 100, "artifact inventory exceeds bound")
     artifacts = [a for a in data["artifacts"] if a["name"].endswith("-safe-outputs-items")]
-    require(1 <= len(artifacts) <= 3, "publication artifacts missing or ambiguous")
+    require(artifacts, "publication artifact not yet visible")
+    require(len(artifacts) <= 3, "publication artifacts ambiguous")
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, *args, **kwargs):
             return None
@@ -150,7 +153,7 @@ def publication_items(run_id):
     return rows
 
 
-def review_evidence():
+def _read_review_evidence():
     rows = api("/pulls/2/reviews?per_page=100")
     require(len(rows) < 100, "review history exceeds bounded scan")
     selected = []
@@ -162,7 +165,8 @@ def review_evidence():
         except (ValueError, KeyError, json.JSONDecodeError):
             continue
         selected.append((review, evidence))
-    require(len(selected) == 1, "one current-run exact-head COMMENT review required")
+    require(selected, "current-run review not yet visible")
+    require(len(selected) == 1, "current-run review ambiguous")
     review, evidence = selected[0]
     expected_id = os.environ.get("REVIEW_ID")
     require(not expected_id or str(review["id"]) == expected_id, "review ID changed")
@@ -173,6 +177,20 @@ def review_evidence():
     require(job_data["total_count"] < 100, "publisher job inventory exceeds bound")
     validate_publication(review, run, job_data["jobs"], publication_items(run["id"]))
     return review, evidence
+
+
+def review_evidence(wait=False):
+    # Native publication can finish before its REST projections catch up. Read-only
+    # admission polling never reruns a job, inference, review submission or CI.
+    pending = {"current-run review not yet visible", "publisher job metadata not yet visible",
+               "publisher metadata not yet complete", "publication artifact not yet visible"}
+    for attempt in range(13 if wait else 1):
+        try:
+            return _read_review_evidence()
+        except ValueError as error:
+            if not wait or str(error) not in pending or attempt == 12:
+                raise
+            time.sleep(10)
 
 
 def source_at(sha):
@@ -290,7 +308,7 @@ def entry():
                 json.dumps({"run_id": os.environ["GITHUB_RUN_ID"], "head": HEAD, "pr": 2}), encoding="utf-8")
     elif stage == "route":
         validate_pr(api("/pulls/2"), HEAD)
-        review, evidence = review_evidence()
+        review, evidence = review_evidence(wait=True)
         if evidence["findings"]:
             validate_findings(evidence, source_at(HEAD))
         output(repair=str(bool(evidence["findings"])).lower(), review_id=review["id"])

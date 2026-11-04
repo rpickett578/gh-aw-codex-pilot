@@ -54,6 +54,11 @@ run's native safe-output-items manifest. Bound inventory/download/decompression;
 do not extract archives or execute downloaded content. The bearer token is never
 forwarded to the signed artifact host or printed. Publisher/route gain only read
 permissions needed for this evidence; no new secret or write scope is added.
+Routing tolerates missing/pending publication REST projections for at most thirteen
+reads with ten-second intervals, inside the existing three-minute job timeout.
+Actual completed/success evidence is still required; failed publishers, wrong
+identities, ambiguous results and contradictory manifests stop immediately.
+This bounded metadata wait never resubmits a review, CI job or AI execution.
 
 The old review is accepted as authentic regression evidence, but cannot satisfy a
 new recovery run: current-run binding still requires a new independent review.

@@ -10,13 +10,13 @@
     ".github/workflows/phase2-repair.md": "9da7902d66b9eae71ce316507dcda9e860383791ab9ae77dfa94e40720d9120d",
     ".github/workflows/phase2-review.lock.yml": "728fc1844d0e5597e8f85ed8e705e31781801e5d58e073f2451cc12f777349b0",
     ".github/workflows/phase2-review.md": "951a13158dd555410ea60cdb6410eb34a7122bf361bcb555a211a36b8ca47ff4",
-    "docs/phase2-recovery.md": "815283ec4af4170cc3a9dbb2c2643800bf676761d004434a861d8aa63271a61f",
+    "docs/phase2-recovery.md": "1a72c769f445363a2b59ac1bb987923f84555ba06bde2542371a4f5064d25a76",
     "docs/phase2.md": "4961da5853689cca13d8b71806e8f8f40b6757c1fd498e1b2453b84d505cfc99",
-    "scripts/phase2.py": "bac1aa6e40d20275426ed5056b940a220ac4e5120766765b1fc4e646cb6d1807",
+    "scripts/phase2.py": "3f01bc865fe9cdf1d608dac532d2d3b3e209aeb2b49b045b7630fd19bf31c241",
     "scripts/verify-phase2-recovery.py": "a60d64246eae0eb5016edf6fccc7914fc96548a3b5e45da29f775cd7dafd6881",
     "scripts/workspace_guard.py": "8d75ada42e2e53bf9add19b26a5082072116f41c47599e0b032e3b7736049ea3",
     "test/fixtures/phase2-observed.json": "1e44d68f363f3e7ef6dd570795ebfb4ec8d4517a81af29c6b3e2f3beff82f460",
     "test/phase2-policy.test.py": "c9e1a91d51c59c89d44b9429c202fd26e1273033a1b90f468c0dffb3bc9da55e",
-    "test/phase2-recovery.test.py": "225c4425c400801f83f146e19ad811bab8da4c2c04a088d2811235f6539c04c8"
+    "test/phase2-recovery.test.py": "c4cc904c3e96be6b54e81f6896b558ea9cb4131c31ce8674bcbd231d68577b37"
   }
 }

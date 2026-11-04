@@ -211,6 +211,23 @@ class EvidenceTests(unittest.TestCase):
     def test_old_authentic_review_cannot_supply_new_run(self):
         with self.assertRaises(ValueError): p.validate_review(FIXTURE["review"], "101")
 
+    def test_pending_publication_metadata_waits_without_resubmission(self):
+        expected=(FIXTURE["review"],{"verdict":"clean","findings":[]})
+        with patch.object(p,"_read_review_evidence",side_effect=[ValueError("publisher metadata not yet complete"),expected]) as read, \
+             patch.object(p.time,"sleep") as sleep:
+            self.assertEqual(p.review_evidence(wait=True),expected)
+            self.assertEqual(read.call_count,2)
+            sleep.assert_called_once_with(10)
+
+    def test_failed_or_exhausted_publication_metadata_fails_closed(self):
+        with patch.object(p,"_read_review_evidence",side_effect=ValueError("publisher failed")), patch.object(p.time,"sleep") as sleep:
+            with self.assertRaises(ValueError): p.review_evidence(wait=True)
+            sleep.assert_not_called()
+        with patch.object(p,"_read_review_evidence",side_effect=ValueError("publisher metadata not yet complete")) as read, patch.object(p.time,"sleep") as sleep:
+            with self.assertRaises(ValueError): p.review_evidence(wait=True)
+            self.assertEqual(read.call_count,13)
+            self.assertEqual(sleep.call_count,12)
+
     def test_native_repair_output_or_exact_empty_child_only(self):
         repair = "1"*40; child = "2"*40
         p.validate_repair_head(repair, repair)
