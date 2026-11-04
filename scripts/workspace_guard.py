@@ -8,6 +8,7 @@ import subprocess
 import sys
 
 ALLOWED = {"review": None, "repair": "src/slugify.mjs", "next": "src/reverse-ascii.mjs"}
+NEXT_BRANCH = "phase2-reverse-ascii-v1"
 
 
 def require(ok, reason):
@@ -64,12 +65,40 @@ def snapshot(root):
             meta, name = entry.split(b"\t", 1)
             require(meta.endswith(b" 0"), "unmerged index entry")
             index[name.decode()] = meta.decode()
-    return {"entries": entries, "head": git(root, "rev-parse", "HEAD").decode().strip(), "index": index}
+    branch = subprocess.run(["git", "-C", str(root), "symbolic-ref", "--quiet", "--short", "HEAD"],
+                            capture_output=True, text=True)
+    require(branch.returncode in [0, 1], "cannot establish local branch")
+    refs = dict(line.split(" ", 1) for line in git(root, "for-each-ref", "--format=%(refname) %(objectname)").decode().splitlines())
+    return {"entries": entries, "head": git(root, "rev-parse", "HEAD").decode().strip(), "index": index,
+            "branch": branch.stdout.strip(), "refs": refs}
 
 
-def compare(before, after, stage):
+def compare(before, after, stage, root=None):
     require(stage in ALLOWED, "unknown guard stage")
-    require(before["head"] == after["head"], "agent changed Git HEAD")
+    if stage == "next":
+        require(root is not None, "real Git checkout required to verify next commit")
+        root = Path(root).resolve()
+        require(ALLOWED[stage] in before["index"] and before["index"][ALLOWED[stage]].startswith("100644 "),
+                "next source must already be tracked and regular at pinned HEAD")
+        require(after["branch"] == NEXT_BRANCH, "next must use exact approved local branch")
+        require("refs/heads/" + NEXT_BRANCH not in before["refs"], "next local branch already existed")
+        require(after["head"] != before["head"], "next must commit its approved source change")
+        ancestry = git(root, "rev-list", "--parents", "-n", "1", after["head"]).decode().split()
+        require(ancestry == [after["head"], before["head"]], "next requires exactly one non-merge child of pinned HEAD")
+        changed = git(root, "diff", "--name-only", "--no-renames", "-z", before["head"], after["head"]).split(b"\0")
+        require(changed == [ALLOWED[stage].encode(), b""], "next commit touched unauthorized files")
+        changed_refs = {name for name in before["refs"].keys() | after["refs"].keys()
+                        if before["refs"].get(name) != after["refs"].get(name)}
+        require(changed_refs == {"refs/heads/" + NEXT_BRANCH} and after["refs"]["refs/heads/" + NEXT_BRANCH] == after["head"],
+                "next changed unauthorized Git refs")
+        committed = git(root, "show", after["head"] + ":" + ALLOWED[stage])
+        require(hashlib.sha256(committed).hexdigest() == after["entries"].get(ALLOWED[stage], {}).get("sha256"),
+                "next source contains uncommitted changes")
+        require(git(root, "ls-files", "--stage", "--", ALLOWED[stage]).decode().split()[1] ==
+                git(root, "rev-parse", after["head"] + ":" + ALLOWED[stage]).decode().strip(), "next index differs from its commit")
+    else:
+        require(before["head"] == after["head"], "agent changed Git HEAD")
+        require(before["branch"] == after["branch"] and before["refs"] == after["refs"], "agent changed protected Git refs")
     allowed = ALLOWED[stage]
     for section in ["entries", "index"]:
         left, right = before[section], after[section]
@@ -102,7 +131,15 @@ def main():
                 "root": str(root), "stage": stage}
     if mode == "capture":
         path.parent.mkdir(mode=0o700, exist_ok=False)
-        record = dict(identity=identity, snapshot=snapshot(root))
+        state = snapshot(root)
+        if stage == "next":
+            require(state["head"] == identity["workflow_sha"], "next checkout is not the pinned workflow HEAD")
+            require("refs/heads/" + NEXT_BRANCH not in state["refs"], "approved local branch already exists")
+            source = ALLOWED[stage]
+            require(source in state["index"] and state["index"][source].startswith("100644 "), "next source is not tracked")
+            require(hashlib.sha256(git(root, "show", state["head"] + ":" + source)).hexdigest() == state["entries"][source]["sha256"],
+                    "next source differs before execution")
+        record = dict(identity=identity, snapshot=state)
         # Host RUNNER_TEMP outside both workspace and sandbox mounts. Never upload.
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o400)
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
@@ -111,7 +148,7 @@ def main():
         require(path.is_file() and not path.is_symlink(), "trusted baseline missing")
         record = json.loads(path.read_text(encoding="utf-8"))
         require(record["identity"] == identity, "baseline context differs")
-        compare(record["snapshot"], snapshot(root), stage)
+        compare(record["snapshot"], snapshot(root), stage, root)
     else:
         raise ValueError("unknown guard operation")
     print("PASS: host-only workspace guard " + mode + " " + stage)

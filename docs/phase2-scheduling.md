@@ -1,5 +1,9 @@
 # Skip-aware scheduling correction — no paid dispatch
 
+Historical activation: recovery-v2 was consumed by run 41901264550. Its automatic
+handoff worked, but native PR publication failed. Do not use the activation below.
+See [the publication contract repair](phase2-publication.md); no new key is granted.
+
 Actual run [41891536813](https://github.com/rpickett578/gh-aw-codex-pilot/actions/runs/41891536813)
 at 40ebfd180e4285167d62e9d0ce680b73af5a1116 reported root success but route/continue
 success, repair skipped and next skipped. The next reusable caller relied on the

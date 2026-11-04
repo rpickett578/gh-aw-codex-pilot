@@ -129,9 +129,9 @@ class WorkspaceTests(unittest.TestCase):
             baseline = g.snapshot(root)
             source = root / "src/reverse-ascii.mjs"
             source.write_text("export function reverseAscii(x) { return x; }\n")
-            g.compare(baseline, g.snapshot(root), "next")
+            with self.assertRaises(ValueError): g.compare(baseline, g.snapshot(root), "next", root)
             source.unlink()
-            with self.assertRaises(ValueError): g.compare(baseline, g.snapshot(root), "next")
+            with self.assertRaises(ValueError): g.compare(baseline, g.snapshot(root), "next", root)
 
     def test_host_only_baseline_capture_check_context_and_no_overwrite(self):
         with observed_workspace() as (root, temporary):
