@@ -1,0 +1,38 @@
+name: Synthetic CI
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+permissions:
+  contents: read
+jobs:
+  verify:
+    name: synthetic-tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.14.1
+      - name: Validate exact bootstrap or all 19 functional tests
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          verifier="$RUNNER_TEMP/verify-pilot-ci.py"
+          if git cat-file -e "$BASE_SHA:scripts/verify-pilot-ci.py" 2>/dev/null; then
+            git show "$BASE_SHA:scripts/verify-pilot-ci.py" > "$verifier"
+          else
+            git show "$HEAD_SHA:scripts/verify-pilot-ci.py" > "$verifier"
+          fi
+          python3 "$verifier"
