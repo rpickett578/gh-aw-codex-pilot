@@ -130,11 +130,14 @@ def publication_items(run_id):
         request = urllib.request.Request(f"https://api.github.com/repos/{REPO}/actions/artifacts/{artifact['id']}/zip",
             headers={"Authorization": "Bearer " + os.environ["GH_TOKEN"], "User-Agent": "phase2-publication"})
         try:
-            urllib.request.build_opener(NoRedirect).open(request, timeout=30)
-            raise ValueError("expected GitHub artifact redirect")
+            with urllib.request.build_opener(NoRedirect).open(request, timeout=30):
+                raise ValueError("expected GitHub artifact redirect")
         except urllib.error.HTTPError as error:
-            require(error.code == 302, "artifact redirect failed")
-            location = error.headers["Location"]
+            try:
+                require(error.code == 302, "artifact redirect failed")
+                location = error.headers["Location"]
+            finally:
+                error.close()
         parsed = urlparse(location)
         require(parsed.scheme == "https" and parsed.hostname and
                 (parsed.hostname.endswith(".blob.core.windows.net") or parsed.hostname.endswith(".githubusercontent.com")),
@@ -160,10 +163,12 @@ def _read_review_evidence():
     for review in rows:
         if "```phase2-review" not in (review.get("body") or ""):
             continue
-        try:
-            evidence = validate_review(review, os.environ["GITHUB_RUN_ID"])
-        except (ValueError, KeyError, json.JSONDecodeError):
+        current = re.search(r'"run_id"\s*:\s*"' + re.escape(os.environ["GITHUB_RUN_ID"]) + r'"', review["body"])
+        if not current:
             continue
+        # Historical reviews are ignored; a review claiming THIS run must validate,
+        # rather than disguising a forged author or payload as propagation delay.
+        evidence = validate_review(review, os.environ["GITHUB_RUN_ID"])
         selected.append((review, evidence))
     require(selected, "current-run review not yet visible")
     require(len(selected) == 1, "current-run review ambiguous")

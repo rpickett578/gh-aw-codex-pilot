@@ -228,6 +228,13 @@ class EvidenceTests(unittest.TestCase):
             self.assertEqual(read.call_count,13)
             self.assertEqual(sleep.call_count,12)
 
+    def test_forged_current_run_review_is_not_treated_as_delay(self):
+        row=copy.deepcopy(FIXTURE["review"]); row["user"]["login"]="rpickett578"
+        with patch.dict(os.environ,{"GITHUB_RUN_ID":str(p.FAILED_RUN)}), patch.object(p,"api",return_value=[row]) as read, patch.object(p.time,"sleep") as sleep:
+            with self.assertRaises(ValueError): p.review_evidence(wait=True)
+            self.assertEqual(read.call_count,1)
+            sleep.assert_not_called()
+
     def test_native_repair_output_or_exact_empty_child_only(self):
         repair = "1"*40; child = "2"*40
         p.validate_repair_head(repair, repair)
