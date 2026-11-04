@@ -17,8 +17,11 @@ spec.loader.exec_module(p)
 
 def review(findings=None):
     data = {"run_id": "101", "head": p.HEAD, "verdict": "findings" if findings else "clean", "findings": findings or []}
-    return {"state": "COMMENTED", "commit_id": p.HEAD, "user": {"login": "rpickett578"},
-            "body": "```phase2-review\n" + json.dumps(data) + "\n```"}
+    original = json.loads((ROOT / "test/fixtures/phase2-observed.json").read_text())["review"]
+    original["body"] = ("```phase2-review\n" + json.dumps(data) + "\n```\n"
+        + f'<!-- id: 101, workflow_id: phase2-review, run: https://github.com/{p.REPO}/actions/runs/101 -->\n'
+        + '[gh-aw-workflow-call-id]: # "rpickett578%2Fgh-aw-codex-pilot%2Fphase2-review"')
+    return original
 
 
 class GateTests(unittest.TestCase):
