@@ -1,5 +1,7 @@
 """Admission and evidence checks for Issue #3; never dispatches or mutates GitHub."""
 import base64
+from datetime import datetime
+import io
 import json
 import os
 import re
@@ -9,6 +11,8 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlparse
+import zipfile
 from pathlib import Path
 
 REPO = "rpickett578/gh-aw-codex-pilot"
@@ -17,6 +21,9 @@ BRANCH = "codex/pilotfix/ascii-slug-normalization-58cc9ff5c8519ae2"
 TASK = "reverse-ascii-v1"
 NEXT_BRANCH = "codex/phase2-reverse-ascii-v1"
 KEY = "phase2-2-" + HEAD + "-" + TASK
+RECOVERY_KEY = KEY + "-recovery-v1"
+FAILED_RUN = 41880752255
+FAILED_SHA = "fa995cbf91f4e7d02916e35f0fd8f9979a8ad298"
 SOURCE = "src/slugify.mjs"
 NEXT_SOURCE = "src/reverse-ascii.mjs"
 
@@ -57,7 +64,13 @@ def oracle(value):
 def validate_review(review, run_id):
     require(review["state"] == "COMMENTED" and review["commit_id"] == HEAD,
             "review must be COMMENT on original exact head")
-    require(review["user"]["login"] == "rpickett578", "unexpected pilot-token review identity")
+    require(review["user"]["login"] == "github-actions[bot]" and review["user"]["id"] == 41898282
+            and review["user"]["type"] == "Bot", "unexpected reviewer identity")
+    require(type(review["id"]) is int and review["id"] > 0, "invalid review ID")
+    require(review["html_url"] == f"https://github.com/{REPO}/pull/2#pullrequestreview-{review['id']}", "review URL differs")
+    marker = f"id: {run_id}, workflow_id: phase2-review, run: https://github.com/{REPO}/actions/runs/{run_id}"
+    require(marker in review["body"] and f'"rpickett578%2Fgh-aw-codex-pilot%2Fphase2-review"' in review["body"],
+            "native workflow publication marker missing")
     blocks = re.findall(r"```phase2-review\s*\n(.*?)\n```", review["body"], re.S)
     require(len(blocks) == 1, "exactly one structured review block required")
     data = json.loads(blocks[0])
@@ -76,23 +89,113 @@ def validate_review(review, run_id):
     return data
 
 
-def review_evidence():
+def validate_publication(review, run, jobs, items):
+    """Authenticate a publication; a historical authentic review is not a recovery admission."""
+    run_id = str(run["id"])
+    validate_review(review, run_id)
+    require(run["event"] == "workflow_dispatch" and run["path"] == ".github/workflows/phase2-chain.yml"
+            and run["run_attempt"] == 1 and run["actor"]["login"] == "rpickett578", "publication run differs")
+    publishers = [j for j in jobs if j["name"] == "review / safe_outputs"]
+    require(publishers, "publisher job metadata not yet visible")
+    require(len(publishers) == 1, "publisher job ambiguous")
+    job = publishers[0]
+    require(job["run_id"] == run["id"] and job["head_sha"] == run["head_sha"], "publisher identity differs")
+    require(job["status"] == "completed", "publisher metadata not yet complete")
+    require(job["conclusion"] == "success", "publisher failed")
+    submitted = datetime.fromisoformat(review["submitted_at"].replace("Z", "+00:00"))
+    require(datetime.fromisoformat(job["started_at"].replace("Z", "+00:00")) <= submitted <=
+            datetime.fromisoformat(job["completed_at"].replace("Z", "+00:00")), "review outside publisher interval")
+    matches = [i for i in items if i.get("type") == "submit_pull_request_review" and i.get("id") == review["id"]]
+    require(len(matches) == 1, "native publication manifest missing or ambiguous")
+    item = matches[0]
+    require(item["status"] == "success" and item["repo"] == REPO and item["number"] == 2
+            and item["url"] == review["html_url"] and item["metadata"]["review_id"] == review["id"]
+            and item["metadata"]["review_event"] == "COMMENT" and item["metadata"]["review_state"] == "COMMENTED",
+            "native publication manifest differs")
+
+
+def publication_items(run_id):
+    # Only official native publisher artifacts from the exact root run; no extraction or code execution.
+    data = api(f"/actions/runs/{run_id}/artifacts?per_page=100")
+    require(data["total_count"] < 100, "artifact inventory exceeds bound")
+    artifacts = [a for a in data["artifacts"] if a["name"].endswith("-safe-outputs-items")]
+    require(artifacts, "publication artifact not yet visible")
+    require(len(artifacts) <= 3, "publication artifacts ambiguous")
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):
+            return None
+    rows = []
+    for artifact in artifacts:
+        require(not artifact["expired"] and artifact["size_in_bytes"] <= 131072, "publication artifact unavailable or oversized")
+        request = urllib.request.Request(f"https://api.github.com/repos/{REPO}/actions/artifacts/{artifact['id']}/zip",
+            headers={"Authorization": "Bearer " + os.environ["GH_TOKEN"], "User-Agent": "phase2-publication"})
+        try:
+            with urllib.request.build_opener(NoRedirect).open(request, timeout=30):
+                raise ValueError("expected GitHub artifact redirect")
+        except urllib.error.HTTPError as error:
+            try:
+                require(error.code == 302, "artifact redirect failed")
+                location = error.headers["Location"]
+            finally:
+                error.close()
+        parsed = urlparse(location)
+        require(parsed.scheme == "https" and parsed.hostname and
+                (parsed.hostname.endswith(".blob.core.windows.net") or parsed.hostname.endswith(".githubusercontent.com")),
+                "untrusted artifact download host")
+        # Fresh request deliberately has NO Authorization header on the cross-host signed URL.
+        try:
+            with urllib.request.urlopen(urllib.request.Request(location), timeout=30) as response:
+                archive = response.read(131073)
+            require(len(archive) <= 131072, "artifact exceeds download bound")
+            with zipfile.ZipFile(io.BytesIO(archive)) as package:
+                info = package.getinfo("safe-output-items.jsonl")
+                require(info.file_size <= 262144, "manifest exceeds decompression bound")
+                rows.extend(json.loads(line) for line in package.read(info).decode().splitlines() if line.strip())
+        except (OSError, KeyError, zipfile.BadZipFile) as error:
+            raise ValueError("native artifact download or decoding failed") from None
+    return rows
+
+
+def _read_review_evidence():
     rows = api("/pulls/2/reviews?per_page=100")
     require(len(rows) < 100, "review history exceeds bounded scan")
     selected = []
     for review in rows:
         if "```phase2-review" not in (review.get("body") or ""):
             continue
-        try:
-            evidence = validate_review(review, os.environ["GITHUB_RUN_ID"])
-        except (ValueError, KeyError, json.JSONDecodeError):
+        current = re.search(r'"run_id"\s*:\s*"' + re.escape(os.environ["GITHUB_RUN_ID"]) + r'"', review["body"])
+        if not current:
             continue
+        # Historical reviews are ignored; a review claiming THIS run must validate,
+        # rather than disguising a forged author or payload as propagation delay.
+        evidence = validate_review(review, os.environ["GITHUB_RUN_ID"])
         selected.append((review, evidence))
-    require(len(selected) == 1, "one current-run exact-head COMMENT review required")
+    require(selected, "current-run review not yet visible")
+    require(len(selected) == 1, "current-run review ambiguous")
     review, evidence = selected[0]
     expected_id = os.environ.get("REVIEW_ID")
     require(not expected_id or str(review["id"]) == expected_id, "review ID changed")
+    run = api("/actions/runs/" + os.environ["GITHUB_RUN_ID"])
+    require(run["head_sha"] == os.environ["GITHUB_WORKFLOW_SHA"] and run["display_title"] == RECOVERY_KEY,
+            "review is not from this recovery installation")
+    job_data = api(f"/actions/runs/{run['id']}/jobs?per_page=100")
+    require(job_data["total_count"] < 100, "publisher job inventory exceeds bound")
+    validate_publication(review, run, job_data["jobs"], publication_items(run["id"]))
     return review, evidence
+
+
+def review_evidence(wait=False):
+    # Native publication can finish before its REST projections catch up. Read-only
+    # admission polling never reruns a job, inference, review submission or CI.
+    pending = {"current-run review not yet visible", "publisher job metadata not yet visible",
+               "publisher metadata not yet complete", "publication artifact not yet visible"}
+    for attempt in range(13 if wait else 1):
+        try:
+            return _read_review_evidence()
+        except ValueError as error:
+            if not wait or str(error) not in pending or attempt == 12:
+                raise
+            time.sleep(10)
 
 
 def source_at(sha):
@@ -160,21 +263,45 @@ def output(**values):
             stream.write(key + "=" + str(value) + "\n")
 
 
-def one_attempt(runs, run_id):
+def one_attempt(runs, run_id, key=KEY):
     require(len(runs) < 100, "run history exceeds bounded scan")
-    require(not any(r["id"] != int(run_id) and r["display_title"] == KEY for r in runs),
+    require(not any(r["id"] != int(run_id) and r["display_title"] == key for r in runs),
             "PR-head/task key already admitted or attempted")
+
+
+def recovery_admission(runs, run_id):
+    one_attempt(runs, run_id, RECOVERY_KEY)
+    previous = [r for r in runs if r["id"] == FAILED_RUN]
+    require(len(previous) == 1, "exact consumed original run missing")
+    old = previous[0]
+    require(old["display_title"] == KEY and old["head_sha"] == FAILED_SHA and old["status"] == "completed"
+            and old["conclusion"] == "failure" and old["run_attempt"] == 1, "original failure provenance differs")
+    require(all(r["id"] in [FAILED_RUN, int(run_id)] for r in runs), "another Phase 2 attempt exists")
+    current = [r for r in runs if r["id"] == int(run_id)]
+    require(len(current) == 1 and current[0]["display_title"] == RECOVERY_KEY
+            and current[0]["head_sha"] == os.environ["GITHUB_WORKFLOW_SHA"] and current[0]["run_attempt"] == 1,
+            "recovery run identity differs")
+
+
+def validate_repair_head(sha, repair_sha, head_commit=None, repair_commit=None):
+    require(re.fullmatch(r"[a-f0-9]{40}", repair_sha), "trusted repair output SHA missing")
+    if sha != repair_sha:
+        require(len(head_commit["parents"]) == 1 and head_commit["parents"][0]["sha"] == repair_sha,
+                "head is not the native repair output or its CI trigger commit")
+        require(head_commit["commit"]["tree"]["sha"] == repair_commit["commit"]["tree"]["sha"],
+                "CI trigger child is not empty")
 
 
 def entry():
     require(os.environ["GITHUB_REPOSITORY"] == REPO, "pilot repository only")
     require(os.environ["GITHUB_RUN_ATTEMPT"] == "1", "reruns forbidden")
     require(os.environ.get("PHASE2_EXECUTION_SHA") == os.environ["GITHUB_WORKFLOW_SHA"], "separate reviewed execution authorization missing")
+    require(os.environ.get("PHASE2_RECOVERY_KEY") == RECOVERY_KEY, "explicit recovery-v1 admission required")
     stage = sys.argv[1]
     if stage == "admit":
         require(os.environ["GITHUB_REF"] == "refs/heads/main", "reviewed main installation only")
         runs = api("/actions/workflows/phase2-chain.yml/runs?event=workflow_dispatch&per_page=100")["workflow_runs"]
-        one_attempt(runs, os.environ["GITHUB_RUN_ID"])
+        recovery_admission(runs, os.environ["GITHUB_RUN_ID"])
         validate_pr(api("/pulls/2"), HEAD)
         require([f["filename"] for f in api("/pulls/2/files")] == [SOURCE], "unrelated PR files")
         actual_ci(HEAD)
@@ -186,7 +313,7 @@ def entry():
                 json.dumps({"run_id": os.environ["GITHUB_RUN_ID"], "head": HEAD, "pr": 2}), encoding="utf-8")
     elif stage == "route":
         validate_pr(api("/pulls/2"), HEAD)
-        review, evidence = review_evidence()
+        review, evidence = review_evidence(wait=True)
         if evidence["findings"]:
             validate_findings(evidence, source_at(HEAD))
         output(repair=str(bool(evidence["findings"])).lower(), review_id=review["id"])
@@ -208,10 +335,9 @@ def entry():
             require(sha != HEAD, "repair did not change head")
             repair_sha = os.environ.get("REPAIR_SHA", "")
             if stage == "continue":
-                require(re.fullmatch(r"[a-f0-9]{40}", repair_sha), "trusted repair output SHA missing")
-                parent = api("/commits/" + sha)["parents"]
-                require(sha == repair_sha or (len(parent) == 1 and parent[0]["sha"] == repair_sha),
-                        "head is not the native repair output or its CI trigger commit")
+                validate_repair_head(sha, repair_sha,
+                    api("/commits/" + sha) if sha != repair_sha else None,
+                    api("/commits/" + repair_sha) if sha != repair_sha else None)
             compare = api("/compare/" + HEAD + "..." + sha)
             require(compare["status"] == "ahead" and 1 <= compare["ahead_by"] <= 2, "not one bounded correction")
             require([f["filename"] for f in compare["files"]] == [SOURCE], "repair touched unrelated files")

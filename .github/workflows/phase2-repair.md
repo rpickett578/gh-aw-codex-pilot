@@ -26,6 +26,7 @@ tools:
   bash: true
 env:
   PHASE2_EXECUTION_SHA: ${{ vars.PHASE2_EXECUTION_SHA }}
+  PHASE2_RECOVERY_KEY: ${{ inputs.recovery_key }}
   REVIEW_ID: ${{ inputs.review_id }}
   PHASE2_STAGE: repair
 pre-agent-steps:
@@ -36,21 +37,17 @@ pre-agent-steps:
       set -euo pipefail
       gh api "repos/rpickett578/gh-aw-codex-pilot/contents/scripts/phase2.py?ref=$GITHUB_WORKFLOW_SHA" --jq .content | base64 --decode > "$RUNNER_TEMP/phase2.py"
       python3 "$RUNNER_TEMP/phase2.py" "$PHASE2_STAGE"
+      gh api "repos/rpickett578/gh-aw-codex-pilot/contents/scripts/workspace_guard.py?ref=$GITHUB_WORKFLOW_SHA" --jq .content | base64 --decode > "$RUNNER_TEMP/phase2-workspace-guard.py"
+      python3 "$RUNNER_TEMP/phase2-workspace-guard.py" capture "$PHASE2_STAGE"
 post-steps:
   - name: Independent post-agent validation
     env:
       GH_TOKEN: ${{ github.token }}
     run: |
       set -euo pipefail
-      case "$PHASE2_STAGE" in
-        review) git diff --exit-code ;;
-        repair)
-          python3 "$RUNNER_TEMP/phase2.py" repair-after
-          test "$(git diff --name-only f50e1a8ccc84cee5812c31938a31c93a078e7103)" = src/slugify.mjs
-          env -u GH_TOKEN node --test test/slugify.test.mjs ;;
-        next) env -u GH_TOKEN node --test test/reverse-ascii.test.mjs ;;
-        *) exit 1 ;;
-      esac
+      python3 "$RUNNER_TEMP/phase2-workspace-guard.py" check "$PHASE2_STAGE"
+      python3 "$RUNNER_TEMP/phase2.py" repair-after
+      env -i PATH="$PATH" HOME="$RUNNER_TEMP" node --permission --allow-fs-read="$GITHUB_WORKSPACE" --test-isolation=none --test test/slugify.test.mjs
 safe-outputs:
   max-patch-files: 1
   report-failure-as-issue: false
@@ -69,8 +66,10 @@ safe-outputs:
       env:
         GH_TOKEN: ${{ github.token }}
         GH_AW_AGENT_OUTPUT: ${{ steps.setup-agent-output-env.outputs.GH_AW_AGENT_OUTPUT }}
+        AGENT_JOB_RESULT: ${{ needs.agent.result }}
       run: |
         set -euo pipefail
+        test "$AGENT_JOB_RESULT" = success
         gh api "repos/rpickett578/gh-aw-codex-pilot/contents/scripts/phase2.py?ref=$GITHUB_WORKFLOW_SHA" --jq .content | base64 --decode > "$RUNNER_TEMP/phase2.py"
         python3 "$RUNNER_TEMP/phase2.py" "publish-$PHASE2_STAGE"
   push-to-pull-request-branch:
@@ -88,6 +87,13 @@ safe-outputs:
     github-token: ${{ secrets.GH_AW_CI_TRIGGER_TOKEN }}
     github-token-for-extra-empty-commit: ${{ secrets.GH_AW_CI_TRIGGER_TOKEN }}
 jobs:
+  safe_outputs:
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      issues: write
+      pull-requests: write
   agent:
     timeout-minutes: 15
   detection:
@@ -98,6 +104,9 @@ timeout-minutes: 8
 on:
   workflow_call:
     inputs:
+      recovery_key:
+        type: string
+        required: true
       review_id:
         type: string
         required: true
@@ -125,3 +134,5 @@ Run node --test test/slugify.test.mjs and use push_to_pull_request_branch once f
 PR #2's original branch. Never rebase, force push, create a fallback PR, or seed
 a defect. The post-agent gate independently checks every reproducer and all 19
 tests; a changed remote head causes failure, not a retry.
+
+Use only uncommitted working-tree edits; do not commit or change Git HEAD.

@@ -1,5 +1,10 @@
 # Issue #3 — finite review, optional correction, one-task continuation
 
+Recovery update: run 41880752255 consumed the original key and failed the invalid
+clean-tree post-check after publishing a clean review. The activation commands
+below are historical and cannot authorize another attempt. See
+[the recovery-v1 procedure](phase2-recovery.md) for the separately gated replacement.
+
 Implementation only. No Phase 2 paid execution is authorized by installation.
 The original worker and exact-head synthetic-tests run now report actual GitHub
 success; neither was rerun. PR #2 remains Draft and unmerged at

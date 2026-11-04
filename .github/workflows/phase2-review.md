@@ -26,6 +26,7 @@ tools:
   bash: true
 env:
   PHASE2_EXECUTION_SHA: ${{ vars.PHASE2_EXECUTION_SHA }}
+  PHASE2_RECOVERY_KEY: ${{ inputs.recovery_key }}
   PHASE2_STAGE: review
 pre-agent-steps:
   - name: Load reviewed admission code and validate this stage
@@ -35,21 +36,13 @@ pre-agent-steps:
       set -euo pipefail
       gh api "repos/rpickett578/gh-aw-codex-pilot/contents/scripts/phase2.py?ref=$GITHUB_WORKFLOW_SHA" --jq .content | base64 --decode > "$RUNNER_TEMP/phase2.py"
       python3 "$RUNNER_TEMP/phase2.py" "$PHASE2_STAGE"
+      gh api "repos/rpickett578/gh-aw-codex-pilot/contents/scripts/workspace_guard.py?ref=$GITHUB_WORKFLOW_SHA" --jq .content | base64 --decode > "$RUNNER_TEMP/phase2-workspace-guard.py"
+      python3 "$RUNNER_TEMP/phase2-workspace-guard.py" capture "$PHASE2_STAGE"
 post-steps:
   - name: Independent post-agent validation
-    env:
-      GH_TOKEN: ${{ github.token }}
     run: |
       set -euo pipefail
-      case "$PHASE2_STAGE" in
-        review) git diff --exit-code ;;
-        repair)
-          python3 "$RUNNER_TEMP/phase2.py" repair-after
-          test "$(git diff --name-only f50e1a8ccc84cee5812c31938a31c93a078e7103)" = src/slugify.mjs
-          env -u GH_TOKEN node --test test/slugify.test.mjs ;;
-        next) env -u GH_TOKEN node --test test/reverse-ascii.test.mjs ;;
-        *) exit 1 ;;
-      esac
+      python3 "$RUNNER_TEMP/phase2-workspace-guard.py" check "$PHASE2_STAGE"
 safe-outputs:
   max-patch-files: 1
   report-failure-as-issue: false
@@ -68,8 +61,10 @@ safe-outputs:
       env:
         GH_TOKEN: ${{ github.token }}
         GH_AW_AGENT_OUTPUT: ${{ steps.setup-agent-output-env.outputs.GH_AW_AGENT_OUTPUT }}
+        AGENT_JOB_RESULT: ${{ needs.agent.result }}
       run: |
         set -euo pipefail
+        test "$AGENT_JOB_RESULT" = success
         gh api "repos/rpickett578/gh-aw-codex-pilot/contents/scripts/phase2.py?ref=$GITHUB_WORKFLOW_SHA" --jq .content | base64 --decode > "$RUNNER_TEMP/phase2.py"
         python3 "$RUNNER_TEMP/phase2.py" "publish-$PHASE2_STAGE"
   submit-pull-request-review:
@@ -85,6 +80,13 @@ safe-outputs:
     side: RIGHT
     github-token: ${{ secrets.GH_AW_CI_TRIGGER_TOKEN }}
 jobs:
+  safe_outputs:
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      issues: write
+      pull-requests: write
   agent:
     timeout-minutes: 15
   detection:
@@ -93,7 +95,11 @@ description: One independent COMMENT-only review of PR 2 at its exact original h
 runs-on: ubuntu-24.04
 timeout-minutes: 8
 on:
-  workflow_call: null
+  workflow_call:
+    inputs:
+      recovery_key:
+        type: string
+        required: true
 if: github.repository == 'rpickett578/gh-aw-codex-pilot' && github.run_attempt == 1 && vars.PHASE2_EXECUTION_SHA == github.workflow_sha
 checkout:
   ref: f50e1a8ccc84cee5812c31938a31c93a078e7103
@@ -127,6 +133,6 @@ block in the review body (read the exact run_id from
 For a genuine defect use verdict "findings" and at most three entries, each with
 exact keys input, expected, line, reason. input is a bounded JSON value; expected
 is {"value":"correct-slug"} or {"error":"TypeError"} per TASK.md. line is the
-changed source line (1–10); reason explains the reproducible correctness defect.
+changed source line (1â€“10); reason explains the reproducible correctness defect.
 The independent gate rejects cases that already pass or contradict the task.
 Never submit APPROVE or REQUEST_CHANGES. Do not launch any task yourself.
