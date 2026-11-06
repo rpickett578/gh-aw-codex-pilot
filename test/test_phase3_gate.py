@@ -132,7 +132,7 @@ class GateTests(unittest.TestCase):
         current='f'*40
         s['pull_requests'][0]['head']['sha']=current
         e['checks'][0]['head_sha']=current;e['runs'][0]['head_sha']=current
-        s['branch_refs'][task]=current
+        s.setdefault('branch_refs', {})[task]=current
         with self.assertRaises(gate.Stop):gate.decide(s)
         e['original_ci']={'checks':[dict(e['checks'][0],head_sha=original)],
                           'runs':[dict(e['runs'][0],head_sha=original)]}
