@@ -12,7 +12,7 @@ env:
   GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
 jobs:
   admit:
-    if: github.repository == 'rpickett578/gh-aw-codex-pilot' && github.ref == 'refs/heads/main' && github.actor == 'rpickett578' && github.run_attempt == 1 && vars.PHASE3_INSTALL_SHA == github.workflow_sha
+    # Never skip this job: an invalid dispatch MUST fail, not produce a green run.
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     permissions:
@@ -22,6 +22,18 @@ jobs:
       checks: read
       actions: read
     steps:
+      - name: Deny an unauthorized dispatch visibly before checkout or any worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'rpickett578/gh-aw-codex-pilot'
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_REF" = refs/heads/main
+          test "$GITHUB_ACTOR" = rpickett578
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          test -n "$PHASE3_INSTALL_SHA"
+          test "$PHASE3_INSTALL_SHA" = "$GITHUB_WORKFLOW_SHA"
+          echo 'PHASE3_ROOT_IDENTITY_PASS: proceed to founder approval admission'
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ github.workflow_sha }}
