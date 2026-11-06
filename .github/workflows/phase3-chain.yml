@@ -208,7 +208,6 @@ jobs:
     needs: [admit, coder2, next2]
     if: >-
       !cancelled() && (needs.coder2.result == 'success' || (needs.admit.outputs.start_task == 'strip-ascii-controls-v1' && needs.admit.outputs.start_action == 'REVIEW' && needs.admit.outputs.start_post_repair != 'true' && needs.next2.result == 'success'))
-    if: ${{ !cancelled() && needs.coder2.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
@@ -230,7 +229,6 @@ jobs:
   reviewer2:
     needs: review_ready2
     if: ${{ !cancelled() && needs.review_ready2.result == 'success' }}
-    if: ${{ !cancelled() && needs.review_ready2.result == 'success' }}
     uses: ./.github/workflows/phase3-review.lock.yml
     with:
       pr_number: ${{ needs.review_ready2.outputs.pr_number }}
@@ -245,7 +243,6 @@ jobs:
     secrets: inherit
   route2:
     needs: reviewer2
-    if: ${{ !cancelled() && needs.reviewer2.result == 'success' }}
     if: ${{ !cancelled() && needs.reviewer2.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 4
@@ -308,7 +305,6 @@ jobs:
     needs: [admit, repair_ready2, next2]
     if: >-
       !cancelled() && needs.repair_ready2.result == 'success' || (needs.admit.outputs.start_task == 'strip-ascii-controls-v1' && needs.admit.outputs.start_action == 'REVIEW' && needs.admit.outputs.start_post_repair == 'true' && needs.next2.result == 'success')
-    if: ${{ !cancelled() && needs.repair_ready2.result == 'success' }}
     uses: ./.github/workflows/phase3-review.lock.yml
     with:
       pr_number: ${{ needs.repair_ready2.outputs.pr_number || needs.admit.outputs.start_pr }}
@@ -352,7 +348,6 @@ jobs:
     needs: [admit, coder3, next3]
     if: >-
       !cancelled() && (needs.coder3.result == 'success' || (needs.admit.outputs.start_task == 'collapse-ascii-spaces-v1' && needs.admit.outputs.start_action == 'REVIEW' && needs.admit.outputs.start_post_repair != 'true' && needs.next3.result == 'success'))
-    if: ${{ !cancelled() && needs.coder3.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
@@ -374,7 +369,6 @@ jobs:
   reviewer3:
     needs: review_ready3
     if: ${{ !cancelled() && needs.review_ready3.result == 'success' }}
-    if: ${{ !cancelled() && needs.review_ready3.result == 'success' }}
     uses: ./.github/workflows/phase3-review.lock.yml
     with:
       pr_number: ${{ needs.review_ready3.outputs.pr_number }}
@@ -389,7 +383,6 @@ jobs:
     secrets: inherit
   route3:
     needs: reviewer3
-    if: ${{ !cancelled() && needs.reviewer3.result == 'success' }}
     if: ${{ !cancelled() && needs.reviewer3.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 4
@@ -452,7 +445,6 @@ jobs:
     needs: [admit, repair_ready3, next3]
     if: >-
       !cancelled() && needs.repair_ready3.result == 'success' || (needs.admit.outputs.start_task == 'collapse-ascii-spaces-v1' && needs.admit.outputs.start_action == 'REVIEW' && needs.admit.outputs.start_post_repair == 'true' && needs.next3.result == 'success')
-    if: ${{ !cancelled() && needs.repair_ready3.result == 'success' }}
     uses: ./.github/workflows/phase3-review.lock.yml
     with:
       pr_number: ${{ needs.repair_ready3.outputs.pr_number || needs.admit.outputs.start_pr }}
