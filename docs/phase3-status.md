@@ -53,13 +53,12 @@ performed real remote repair publication.
 ## Budget and authority
 
 Coder+detector: 3 x (25+8) = 99 AIC.
-Independent first reviewer+detector: 3 x (15+8) = 69 AIC.
+Independent first reviewer+detector: 3 x (12+8) = 60 AIC.
 Optional one repair+detector per task: 3 x (15+8) = 69 AIC.
-Optional second reviewer+detector for every repaired task: 3 x (15+8) = 69 AIC.
-The full configured worst case is **306 AIC**, which **exceeds** the
-Issue #10 stated 300 AIC pilot cap. Therefore the full three-repair path
-requires a stricter budget choice *before* dispatch; do not treat 300 as a
-guaranteed invoice ceiling. A clean run is 168 AIC. Every stage has zero
+Optional second reviewer+detector for every repaired task: 3 x (12+8) = 60 AIC.
+The full configured worst case is **288 AIC**, below the Issue #10 stated
+300 AIC pilot cap. This is a configured guardrail, **not a guaranteed invoice
+ceiling or proof of actual billing**. A clean run is 159 AIC. Every stage has zero
 automatic retries. The original Issue #10 execution approval is still absent.
 
 Keep Draft PR #14 unmerged until independent human review and founder
