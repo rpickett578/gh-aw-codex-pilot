@@ -84,6 +84,14 @@ def main():
                 print('PHASE3_REPAIRED_HEAD_REVIEW_READY', task_id, head)
                 return
         action = result.get('action')
+        # Native publication is eventually consistent: the original findings
+        # state can remain briefly visible after the repaired commit is pushed.
+        # Poll metadata only, never retry the writer.
+        if mode == 'repair-ready' and action == 'REPAIR' and result.get('task') == task_id:
+            if attempt == 17:
+                raise Stop('native repair not visible before bounded wait expired')
+            time.sleep(10)
+            continue
         if mode == 'review-ready' and action == 'REVIEW':
             require(result.get('task') == task_id and
                     str(result.get('pr')) == expected_pr and
