@@ -70,7 +70,7 @@ safe-outputs:
         done
         mkdir -p "$RUNNER_TEMP/phase4"
         gh api "repos/rpickett578/gh-aw-codex-pilot/contents/phase4/queue.json?ref=$GITHUB_WORKFLOW_SHA" --jq .content | base64 --decode > "$RUNNER_TEMP/phase4/queue.json"
-        PYTHONPATH="$RUNNER_TEMP" python3 "$RUNNER_TEMP/phase4_runtime.py" recheck
+        PHASE4_QUEUE_PATH="$RUNNER_TEMP/phase4/queue.json" PYTHONPATH="$RUNNER_TEMP" python3 "$RUNNER_TEMP/phase4_runtime.py" recheck
   submit-pull-request-review:
     target: "${{ inputs.pr_number }}"
     commit-id: ${{ inputs.head_sha }}
