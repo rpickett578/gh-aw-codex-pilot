@@ -1,0 +1,35 @@
+name: Phase 3 read-only queue preflight
+run-name: phase3-read-only-admission
+on:
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: phase3-read-only-preflight
+  cancel-in-progress: false
+jobs:
+  inspect:
+    if: github.repository == 'rpickett578/gh-aw-codex-pilot' && github.ref == 'refs/heads/main' && github.actor == 'rpickett578' && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      checks: read
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PHASE3_INSTALL_SHA: ${{ vars.PHASE3_INSTALL_SHA }}
+      GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Check exact install and read current approved queue
+        run: |
+          set -euo pipefail
+          python3 scripts/phase3_snapshot.py
+      - name: Explicit no-dispatch boundary
+        run: |
+          echo 'Read-only preflight complete: no Codex worker, mutation, or paid API dispatch.'

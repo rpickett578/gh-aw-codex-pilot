@@ -1,0 +1,470 @@
+name: Phase 3 bounded three-task synthetic Codex chain
+run-name: phase3-three-task-one-shot
+on:
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: phase3-one-active-root-run
+  cancel-in-progress: false
+env:
+  PHASE3_INSTALL_SHA: ${{ vars.PHASE3_INSTALL_SHA }}
+  PHASE3_CHAIN_RUN_ID: ${{ github.run_id }}
+  GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
+jobs:
+  admit:
+    # Never skip this job: an invalid dispatch MUST fail, not produce a green run.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      checks: read
+      actions: read
+    steps:
+      - name: Deny an unauthorized dispatch visibly before checkout or any worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'rpickett578/gh-aw-codex-pilot'
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_REF" = refs/heads/main
+          test "$GITHUB_ACTOR" = rpickett578
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          test -n "$PHASE3_INSTALL_SHA"
+          test "$PHASE3_INSTALL_SHA" = "$GITHUB_WORKFLOW_SHA"
+          echo 'PHASE3_ROOT_IDENTITY_PASS: proceed to founder approval admission'
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Require exact founder approval and one unconsumed root run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 scripts/phase3_snapshot.py > "$RUNNER_TEMP/phase3-first.json"
+          python3 -c 'import json,os; x=json.load(open(os.environ["RUNNER_TEMP"]+"/phase3-first.json")); assert x["action"]=="CODING" and x["task"]=="ascii-vowel-count-v1" and x["issue"]==11, "first task not admitted"'
+  coder1:
+    needs: admit
+    uses: ./.github/workflows/phase3-coder-1.lock.yml
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+      checks: read
+    secrets: inherit
+  review_ready1:
+    needs: coder1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
+    outputs:
+      pr_number: ${{ steps.gate.outputs.pr_number }}
+      head_sha: ${{ steps.gate.outputs.head_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - id: gate
+        name: Wait only for real required CI at the exact native Draft PR head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_PR: ${{ needs.coder1.outputs.created_pr_number }}
+          EXPECTED_URL: ${{ needs.coder1.outputs.created_pr_url }}
+        run: python3 scripts/phase3_wait.py review-ready ascii-vowel-count-v1
+  reviewer1:
+    needs: review_ready1
+    uses: ./.github/workflows/phase3-review.lock.yml
+    with:
+      pr_number: ${{ needs.review_ready1.outputs.pr_number }}
+      head_sha: ${{ needs.review_ready1.outputs.head_sha }}
+      task_id: ascii-vowel-count-v1
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+      checks: read
+    secrets: inherit
+  route1:
+    needs: reviewer1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
+    outputs:
+      repair: ${{ steps.route.outputs.repair }}
+      pr_number: ${{ steps.route.outputs.pr_number }}
+      original_head: ${{ steps.route.outputs.original_head }}
+      review_id: ${{ steps.route.outputs.review_id }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - id: route
+        name: Independently classify the actual review and reproduce any authentic defect
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/phase3_route.py ascii-vowel-count-v1
+  repair1:
+    needs: route1
+    if: needs.route1.result == 'success' && needs.route1.outputs.repair == 'true'
+    uses: ./.github/workflows/phase3-repair-1.lock.yml
+    with:
+      pr_number: ${{ needs.route1.outputs.pr_number }}
+      original_head: ${{ needs.route1.outputs.original_head }}
+      review_id: ${{ needs.route1.outputs.review_id }}
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+      checks: read
+    secrets: inherit
+  repair_ready1:
+    needs: [route1, repair1]
+    if: >-
+      !cancelled() && needs.route1.result == 'success' &&
+      needs.route1.outputs.repair == 'true' && needs.repair1.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
+    outputs:
+      pr_number: ${{ steps.gate.outputs.pr_number }}
+      head_sha: ${{ steps.gate.outputs.head_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - id: gate
+        name: Validate one native appended source commit, actual new CI and corrected findings
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_PR: ${{ needs.route1.outputs.pr_number }}
+          ORIGINAL_HEAD: ${{ needs.route1.outputs.original_head }}
+          NATIVE_REPAIR_SHA: ${{ needs.repair1.outputs.push_commit_sha }}
+        run: python3 scripts/phase3_wait.py repair-ready ascii-vowel-count-v1
+  second_review1:
+    needs: repair_ready1
+    uses: ./.github/workflows/phase3-review.lock.yml
+    with:
+      pr_number: ${{ needs.repair_ready1.outputs.pr_number }}
+      head_sha: ${{ needs.repair_ready1.outputs.head_sha }}
+      task_id: ascii-vowel-count-v1
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+      checks: read
+    secrets: inherit
+  next2:
+    needs: [route1, repair1, repair_ready1, second_review1]
+    if: >-
+      !cancelled() && needs.route1.result == 'success' &&
+      ((needs.route1.outputs.repair == 'false' &&
+        needs.repair1.result == 'skipped' &&
+        needs.repair_ready1.result == 'skipped' &&
+        needs.second_review1.result == 'skipped') ||
+       (needs.route1.outputs.repair == 'true' &&
+        needs.repair1.result == 'success' &&
+        needs.repair_ready1.result == 'success' &&
+        needs.second_review1.result == 'success'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Require independent clean review and the next approved task
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/phase3_wait.py next-ready strip-ascii-controls-v1
+  coder2:
+    needs: next2
+    uses: ./.github/workflows/phase3-coder-2.lock.yml
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+      checks: read
+    secrets: inherit
+  review_ready2:
+    needs: coder2
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
+    outputs:
+      pr_number: ${{ steps.gate.outputs.pr_number }}
+      head_sha: ${{ steps.gate.outputs.head_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - id: gate
+        name: Wait only for real required CI at exact second Draft PR head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_PR: ${{ needs.coder2.outputs.created_pr_number }}
+          EXPECTED_URL: ${{ needs.coder2.outputs.created_pr_url }}
+        run: python3 scripts/phase3_wait.py review-ready strip-ascii-controls-v1
+  reviewer2:
+    needs: review_ready2
+    uses: ./.github/workflows/phase3-review.lock.yml
+    with:
+      pr_number: ${{ needs.review_ready2.outputs.pr_number }}
+      head_sha: ${{ needs.review_ready2.outputs.head_sha }}
+      task_id: strip-ascii-controls-v1
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+      checks: read
+    secrets: inherit
+  route2:
+    needs: reviewer2
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
+    outputs:
+      repair: ${{ steps.route.outputs.repair }}
+      pr_number: ${{ steps.route.outputs.pr_number }}
+      original_head: ${{ steps.route.outputs.original_head }}
+      review_id: ${{ steps.route.outputs.review_id }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - id: route
+        name: Independently classify the actual review and reproduce any authentic defect
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/phase3_route.py strip-ascii-controls-v1
+  repair2:
+    needs: route2
+    if: needs.route2.result == 'success' && needs.route2.outputs.repair == 'true'
+    uses: ./.github/workflows/phase3-repair-2.lock.yml
+    with:
+      pr_number: ${{ needs.route2.outputs.pr_number }}
+      original_head: ${{ needs.route2.outputs.original_head }}
+      review_id: ${{ needs.route2.outputs.review_id }}
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+      checks: read
+    secrets: inherit
+  repair_ready2:
+    needs: [route2, repair2]
+    if: >-
+      !cancelled() && needs.route2.result == 'success' &&
+      needs.route2.outputs.repair == 'true' && needs.repair2.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
+    outputs:
+      pr_number: ${{ steps.gate.outputs.pr_number }}
+      head_sha: ${{ steps.gate.outputs.head_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - id: gate
+        name: Validate one native appended source commit, actual new CI and corrected findings
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_PR: ${{ needs.route2.outputs.pr_number }}
+          ORIGINAL_HEAD: ${{ needs.route2.outputs.original_head }}
+          NATIVE_REPAIR_SHA: ${{ needs.repair2.outputs.push_commit_sha }}
+        run: python3 scripts/phase3_wait.py repair-ready strip-ascii-controls-v1
+  second_review2:
+    needs: repair_ready2
+    uses: ./.github/workflows/phase3-review.lock.yml
+    with:
+      pr_number: ${{ needs.repair_ready2.outputs.pr_number }}
+      head_sha: ${{ needs.repair_ready2.outputs.head_sha }}
+      task_id: strip-ascii-controls-v1
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+      checks: read
+    secrets: inherit
+  next3:
+    needs: [route2, repair2, repair_ready2, second_review2]
+    if: >-
+      !cancelled() && needs.route2.result == 'success' &&
+      ((needs.route2.outputs.repair == 'false' &&
+        needs.repair2.result == 'skipped' &&
+        needs.repair_ready2.result == 'skipped' &&
+        needs.second_review2.result == 'skipped') ||
+       (needs.route2.outputs.repair == 'true' &&
+        needs.repair2.result == 'success' &&
+        needs.repair_ready2.result == 'success' &&
+        needs.second_review2.result == 'success'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Require second clean review and final approved task
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/phase3_wait.py next-ready collapse-ascii-spaces-v1
+  coder3:
+    needs: next3
+    uses: ./.github/workflows/phase3-coder-3.lock.yml
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+      checks: read
+    secrets: inherit
+  review_ready3:
+    needs: coder3
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
+    outputs:
+      pr_number: ${{ steps.gate.outputs.pr_number }}
+      head_sha: ${{ steps.gate.outputs.head_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - id: gate
+        name: Wait only for real required CI at exact third Draft PR head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_PR: ${{ needs.coder3.outputs.created_pr_number }}
+          EXPECTED_URL: ${{ needs.coder3.outputs.created_pr_url }}
+        run: python3 scripts/phase3_wait.py review-ready collapse-ascii-spaces-v1
+  reviewer3:
+    needs: review_ready3
+    uses: ./.github/workflows/phase3-review.lock.yml
+    with:
+      pr_number: ${{ needs.review_ready3.outputs.pr_number }}
+      head_sha: ${{ needs.review_ready3.outputs.head_sha }}
+      task_id: collapse-ascii-spaces-v1
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+      checks: read
+    secrets: inherit
+  route3:
+    needs: reviewer3
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
+    outputs:
+      repair: ${{ steps.route.outputs.repair }}
+      pr_number: ${{ steps.route.outputs.pr_number }}
+      original_head: ${{ steps.route.outputs.original_head }}
+      review_id: ${{ steps.route.outputs.review_id }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - id: route
+        name: Independently classify the actual review and reproduce any authentic defect
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/phase3_route.py collapse-ascii-spaces-v1
+  repair3:
+    needs: route3
+    if: needs.route3.result == 'success' && needs.route3.outputs.repair == 'true'
+    uses: ./.github/workflows/phase3-repair-3.lock.yml
+    with:
+      pr_number: ${{ needs.route3.outputs.pr_number }}
+      original_head: ${{ needs.route3.outputs.original_head }}
+      review_id: ${{ needs.route3.outputs.review_id }}
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+      checks: read
+    secrets: inherit
+  repair_ready3:
+    needs: [route3, repair3]
+    if: >-
+      !cancelled() && needs.route3.result == 'success' &&
+      needs.route3.outputs.repair == 'true' && needs.repair3.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
+    outputs:
+      pr_number: ${{ steps.gate.outputs.pr_number }}
+      head_sha: ${{ steps.gate.outputs.head_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - id: gate
+        name: Validate one native appended source commit, actual new CI and corrected findings
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_PR: ${{ needs.route3.outputs.pr_number }}
+          ORIGINAL_HEAD: ${{ needs.route3.outputs.original_head }}
+          NATIVE_REPAIR_SHA: ${{ needs.repair3.outputs.push_commit_sha }}
+        run: python3 scripts/phase3_wait.py repair-ready collapse-ascii-spaces-v1
+  second_review3:
+    needs: repair_ready3
+    uses: ./.github/workflows/phase3-review.lock.yml
+    with:
+      pr_number: ${{ needs.repair_ready3.outputs.pr_number }}
+      head_sha: ${{ needs.repair_ready3.outputs.head_sha }}
+      task_id: collapse-ascii-spaces-v1
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+      checks: read
+    secrets: inherit
+  acceptance:
+    needs: [route3, repair3, repair_ready3, second_review3]
+    if: >-
+      !cancelled() && needs.route3.result == 'success' &&
+      ((needs.route3.outputs.repair == 'false' &&
+        needs.repair3.result == 'skipped' &&
+        needs.repair_ready3.result == 'skipped' &&
+        needs.second_review3.result == 'skipped') ||
+       (needs.route3.outputs.repair == 'true' &&
+        needs.repair3.result == 'success' &&
+        needs.repair_ready3.result == 'success' &&
+        needs.second_review3.result == 'success'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Require three Draft PRs, three actual CI successes and three clean independent COMMENT reviews
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/phase3_wait.py complete collapse-ascii-spaces-v1
