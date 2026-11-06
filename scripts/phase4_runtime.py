@@ -17,6 +17,11 @@ STAGE_BUDGET = {"READY_CODING": 53, "READY_REVIEW": 53}
 CONTEXT = Path("/tmp/gh-aw/phase4-task-context.json")
 
 
+def host_context():
+    # This must be outside the agent-editable workspace and /tmp/gh-aw mount.
+    return Path(os.environ.get("PHASE4_HOST_CONTEXT_PATH", str(CONTEXT)))
+
+
 def sh(*args):
     return subprocess.check_output(["git", *args], text=True).strip()
 
@@ -67,16 +72,22 @@ def admit(verify_checkout=True):
                "source": item["allowed_files"][0], "install_sha": sha,
                "run_id": os.environ.get("GITHUB_RUN_ID"),
                "pr": selected.get("pr"), "head": os.environ.get("PHASE4_HEAD", "")}
-    CONTEXT.parent.mkdir(parents=True, exist_ok=True)
-    CONTEXT.write_text(json.dumps(context, indent=2), encoding="utf-8")
-    CONTEXT.chmod(0o400)
+    trusted = host_context()
+    trusted.parent.mkdir(parents=True, exist_ok=True)
+    trusted.write_text(json.dumps(context, indent=2), encoding="utf-8")
+    trusted.chmod(0o400)
+    if trusted != CONTEXT:
+        CONTEXT.parent.mkdir(parents=True, exist_ok=True)
+        CONTEXT.write_text(json.dumps(context, indent=2), encoding="utf-8")
+        CONTEXT.chmod(0o400)
     print("PHASE4_RUNTIME_ADMISSION_PASS", expected_state, task_id)
     return context
 
 
 def post():
-    require(CONTEXT.is_file(), "original host context missing")
-    context = json.loads(CONTEXT.read_text(encoding="utf-8"))
+    trusted = host_context()
+    require(trusted.is_file(), "original trusted host context missing")
+    context = json.loads(trusted.read_text(encoding="utf-8"))
     require(context.get("task") == os.environ.get("PHASE4_TASK_ID") and
             context.get("action") == os.environ.get("PHASE4_ACTION"),
             "worker context not pinned")
