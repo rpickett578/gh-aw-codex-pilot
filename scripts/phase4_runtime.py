@@ -19,7 +19,7 @@ def sh(*args):
     return subprocess.check_output(["git", *args], text=True).strip()
 
 
-def admit():
+def admit(verify_checkout=True):
     require(os.environ.get("GITHUB_REPOSITORY") == REPO and
             os.environ.get("GITHUB_REF") == "refs/heads/main" and
             os.environ.get("GITHUB_RUN_ATTEMPT") == "1",
@@ -47,12 +47,15 @@ def admit():
     require(len(item["allowed_files"]) == 1,
             "generic v1 worker permits exactly one source file")
     if expected_state == "READY_CODING":
-        require(sh("rev-parse", "HEAD") == sha,
-                "coder must start from exact reviewed main commit")
+        if verify_checkout:
+            require(sh("rev-parse", "HEAD") == sha,
+                    "coder must start from exact reviewed main commit")
     else:
-        require(str(selected.get("pr")) == os.environ.get("PHASE4_PR") and
-                sh("rev-parse", "HEAD") == os.environ.get("PHASE4_HEAD"),
-                "reviewer not on the pinned current PR head")
+        require(str(selected.get("pr")) == os.environ.get("PHASE4_PR"),
+                "reviewer PR identity changed")
+        if verify_checkout:
+            require(sh("rev-parse", "HEAD") == os.environ.get("PHASE4_HEAD"),
+                    "reviewer not on pinned current PR head")
     issue = snapshot["issues"][str(item["issue"])]
     require(isinstance(issue.get("body"), str) and len(issue["body"]) <= 12000,
             "issue body absent or oversized")
@@ -92,10 +95,10 @@ def post():
 
 
 def main():
-    require(len(sys.argv) == 2 and sys.argv[1] in ("pre", "post"),
-            "usage: phase4_runtime.py pre|post")
-    if sys.argv[1] == "pre":
-        admit()
+    require(len(sys.argv) == 2 and sys.argv[1] in ("pre", "recheck", "post"),
+            "usage: phase4_runtime.py pre|recheck|post")
+    if sys.argv[1] in ("pre", "recheck"):
+        admit(verify_checkout=sys.argv[1] == "pre")
     else:
         post()
 
