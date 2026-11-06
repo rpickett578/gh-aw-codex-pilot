@@ -12,11 +12,17 @@ ALLOWED = {
     "coder-1": "src/ascii-vowel-count.mjs",
     "coder-2": "src/strip-ascii-controls.mjs",
     "coder-3": "src/collapse-ascii-spaces.mjs",
+    "repair-1": "src/ascii-vowel-count.mjs",
+    "repair-2": "src/strip-ascii-controls.mjs",
+    "repair-3": "src/collapse-ascii-spaces.mjs",
 }
 NEXT_BRANCHES = {
     "coder-1": "phase3-ascii-vowel-count-v1",
     "coder-2": "phase3-strip-ascii-controls-v1",
     "coder-3": "phase3-collapse-ascii-spaces-v1",
+    "repair-1": "codex/phase3-ascii-vowel-count-v1",
+    "repair-2": "codex/phase3-strip-ascii-controls-v1",
+    "repair-3": "codex/phase3-collapse-ascii-spaces-v1",
 }
 
 
@@ -142,8 +148,16 @@ def main():
         path.parent.mkdir(mode=0o700, exist_ok=False)
         state = snapshot(root)
         if stage in NEXT_BRANCHES:
-            require(state["head"] == identity["workflow_sha"], "next checkout is not the pinned workflow HEAD")
-            require("refs/heads/" + NEXT_BRANCHES[stage] not in state["refs"], "approved local branch already exists")
+            if stage.startswith("repair-"):
+                require(state["head"] == os.environ.get("ORIGINAL_HEAD"),
+                        "repair checkout must match the original reviewed SHA")
+                require(not state["branch"],
+                        "repair must start detached at the exact reviewed head")
+            else:
+                require(state["head"] == identity["workflow_sha"],
+                        "coder checkout must match reviewed main installation")
+            require("refs/heads/" + NEXT_BRANCHES[stage] not in state["refs"],
+                    "approved local branch already exists")
             source = ALLOWED[stage]
             require(source in state["index"] and state["index"][source].startswith("100644 "), "next source is not tracked")
             require(hashlib.sha256(git(root, "show", state["head"] + ":" + source)).hexdigest() == state["entries"][source]["sha256"],
