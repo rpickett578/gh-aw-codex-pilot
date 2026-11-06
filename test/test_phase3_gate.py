@@ -112,10 +112,40 @@ class GateTests(unittest.TestCase):
         s['evidence'][gate.TASKS[0][1]]['reviews'][0]['body']=body+'\\n'+marker+'\\n'+call
         self.assertEqual(gate.decide(s)['issue'],12)
 
-    def test_review_findings_stop_for_explicit_repair_gate(self):
+    def test_review_findings_select_exactly_one_bounded_repair(self):
         s=complete(approve(snapshot()),1);r=s['evidence'][gate.TASKS[0][1]]['reviews'][0]
-        r['body']=r['body'].replace('"verdict": "clean", "findings": []','"verdict": "findings", "findings": [{"input": "x"}]')
-        self.assertEqual(gate.decide(s)['reason'],'REPAIR_NOT_YET_PROVEN')
+        finding={'input':'Ae','expected':{'value':2},'line':2,'reason':'missed vowel'}
+        body=json.loads(r['body'].split('phase3-review\\n')[1].split('\\n')[0])
+        body['verdict']='findings';body['findings']=[finding]
+        r['body']='```phase3-review\\n'+json.dumps(body)+'\\n```'
+        d=gate.decide(s)
+        self.assertEqual((d['action'], d['task'], d['review_id']),('REPAIR',gate.TASKS[0][1],None))
+
+    def test_one_appended_repair_needs_exact_proof_and_second_clean_review(self):
+        s=complete(approve(snapshot()),1)
+        task=gate.TASKS[0][1];e=s['evidence'][task];r=e['reviews'][0]
+        original=r['commit_id']
+        data=json.loads(r['body'].split('phase3-review\\n')[1].split('\\n')[0])
+        data['verdict']='findings'
+        data['findings']=[{'input':'Ae','expected':{'value':2},'line':2,'reason':'missed'}]
+        r['body']='```phase3-review\\n'+json.dumps(data)+'\\n```'
+        current='f'*40
+        s['pull_requests'][0]['head']['sha']=current
+        e['checks'][0]['head_sha']=current;e['runs'][0]['head_sha']=current
+        s['branch_refs'][task]=current
+        with self.assertRaises(gate.Stop):gate.decide(s)
+        e['original_ci']={'checks':[dict(e['checks'][0],head_sha=original)],
+                          'runs':[dict(e['runs'][0],head_sha=original)]}
+        e['repair_proof']={'status':'ahead','ahead_by':1,
+            'base_commit':{'sha':original},'merge_base_commit':{'sha':original},
+            'commits':[{'sha':current,'parents':[{'sha':original}]}],
+            'files':[{'filename':gate.TASKS[0][2],'status':'modified'}]}
+        self.assertEqual(gate.decide(s)['action'],'REVIEW')
+        d2=dict(data,head=current,verdict='clean',findings=[])
+        e['reviews'].append(dict(r,commit_id=current,body='```phase3-review\\n'+json.dumps(d2)+'\\n```'))
+        self.assertEqual(gate.decide(s)['issue'],12)
+        e['repair_proof']['commits'].append({'sha':'e'*40,'parents':[{'sha':current}]})
+        with self.assertRaises(gate.Stop):gate.decide(s)
 
 
 if __name__=='__main__':unittest.main()
