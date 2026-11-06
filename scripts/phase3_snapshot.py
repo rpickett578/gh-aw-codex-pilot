@@ -75,6 +75,22 @@ def collect():
                                 key="workflow_runs"),
                 "reviews": bounded("/pulls/" + str(number) + "/reviews?per_page=100"),
             }
+            # Reconcile one previous independent finding against the current
+            # exact head. A repaired PR must preserve the original CI success.
+            prior = [r for r in evidence[task_id]["reviews"]
+                     if r.get("commit_id") != head and
+                     "```phase3-review" in (r.get("body") or "")]
+            check(len(prior) <= 1, "multiple historic reviewed heads")
+            if prior:
+                original = prior[0].get("commit_id", "")
+                check(re.fullmatch("[0-9a-f]{40}", original) is not None,
+                      "historic review head invalid")
+                evidence[task_id]["repair_proof"] = api("/compare/" + original + "..." + head)
+                evidence[task_id]["original_ci"] = {
+                    "checks": bounded("/commits/" + original + "/check-runs?per_page=100", key="check_runs"),
+                    "runs": bounded("/actions/workflows/ci.yml/runs?event=pull_request&head_sha=" + original + "&per_page=100",
+                                    key="workflow_runs")
+                }
     # The standalone preflight does not impersonate a paid chain run. When a
     # reviewed chain is installed, its callers can opt in to one-run admission.
     chain_run_id = os.environ.get("PHASE3_CHAIN_RUN_ID")
