@@ -26,6 +26,7 @@ tools:
   bash: true
 env:
   PHASE3_INSTALL_SHA: ${{ vars.PHASE3_INSTALL_SHA }}
+  PHASE3_CHAIN_RUN_ID: ${{ github.run_id }}
   PHASE3_STAGE: coder-1
 pre-agent-steps:
   - name: Read-only approved queue and exact task admission
