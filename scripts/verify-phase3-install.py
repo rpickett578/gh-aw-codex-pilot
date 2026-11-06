@@ -13,6 +13,9 @@ EXPECTED = {
     ".github/workflows/phase3-preflight.yml",
     ".github/workflows/phase3-chain.yml",
     ".github/workflows/phase3-review.md",
+    ".github/workflows/phase3-repair-1.md",
+    ".github/workflows/phase3-repair-2.md",
+    ".github/workflows/phase3-repair-3.md",
     ".github/workflows/phase3-coder-1.md",
     ".github/workflows/phase3-coder-2.md",
     ".github/workflows/phase3-coder-3.md",
@@ -21,9 +24,12 @@ EXPECTED = {
     "scripts/phase3_snapshot.py",
     "scripts/phase3_worker_ci.py",
     "scripts/phase3_wait.py",
+    "scripts/phase3_repair_evidence.py",
+    "scripts/phase3_route.py",
     "scripts/phase3_workspace_guard.py",
     "scripts/verify-phase3-install.py",
     "test/test_phase3_gate.py",
+    "test/test_phase3_repair.py",
     "src/ascii-vowel-count.mjs",
     "src/strip-ascii-controls.mjs",
     "src/collapse-ascii-spaces.mjs",
@@ -38,6 +44,9 @@ LOCK_SHA256 = {
     ".github/workflows/phase3-coder-2.lock.yml": "03ad2d0c3030cd8f8e5a860a4485210a40676a922c8e3f87faff7e88baf384d5",
     ".github/workflows/phase3-coder-3.lock.yml": "7eb898f746fdde939c561fb7bfae5d77e6bd1788612ddce57f7495d85358f6a6",
     ".github/workflows/phase3-review.lock.yml": "1d451eadba30aed771ac6afaf0e91658ffa02b2f396422eddc1a177d38729d0b",
+    ".github/workflows/phase3-repair-1.lock.yml": "PENDING_PINNED_COMPILER_SHA256",
+    ".github/workflows/phase3-repair-2.lock.yml": "PENDING_PINNED_COMPILER_SHA256",
+    ".github/workflows/phase3-repair-3.lock.yml": "PENDING_PINNED_COMPILER_SHA256",
 }
 
 def require(ok, reason):
@@ -60,7 +69,9 @@ require(git("rev-parse", "HEAD") == os.environ["HEAD_SHA"],
         "checked out wrong PR head")
 changed = set(git("diff", "--name-only", BASE + "..." + os.environ["HEAD_SHA"]).splitlines())
 compiled = changed & set(LOCK_SHA256)
-require(compiled == set() or compiled == set(LOCK_SHA256),
+base_locks = {p for p in LOCK_SHA256 if 'repair-' not in p}
+repair_locks = set(LOCK_SHA256) - base_locks
+require(compiled in (base_locks, base_locks | repair_locks),
         "partial compiled lock installation prohibited")
 allowed = EXPECTED | compiled
 require(changed == allowed,
@@ -78,6 +89,7 @@ for protected in [".github/workflows/phase2-chain.yml",
     require(git("rev-parse", BASE + ":" + protected) ==
             git("rev-parse", os.environ["HEAD_SHA"] + ":" + protected),
             "Phase 2 protected content changed: " + protected)
-subprocess.run([sys.executable, "-m", "unittest", "discover",
-                "-s", "test", "-p", "test_phase3_gate.py", "-v"], check=True)
-print("PHASE3_INSTALL_PASS: bounded installer, optional exact three compiled lock files; unchanged Phase 2 guards; regression suite.")
+for pattern in ("test_phase3_gate.py", "test_phase3_repair.py"):
+    subprocess.run([sys.executable, "-m", "unittest", "discover",
+                    "-s", "test", "-p", pattern, "-v"], check=True)
+print("PHASE3_INSTALL_PASS: bounded installer, exact 4-or-7 compiled locks; unchanged Phase 2 guards; regression suite.")
