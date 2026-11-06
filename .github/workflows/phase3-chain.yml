@@ -52,7 +52,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/phase3_snapshot.py > "$RUNNER_TEMP/phase3-first.json"
-          python3 -c 'import json,os; x=json.load(open(os.environ["RUNNER_TEMP"]+"/phase3-first.json")); assert x.get("action") in ("CODING","REVIEW","REPAIR") and x.get("task") in ("ascii-vowel-count-v1","strip-ascii-controls-v1","collapse-ascii-spaces-v1"), "no approved outstanding stage"; f=open(os.environ["GITHUB_OUTPUT"],"a"); [f.write("start_"+k+"="+str(x.get(k,"")).lower().replace("none","")+(chr(10))) for k in ("action","task","pr","head","review_id","post_repair")]; f.close()'
+          python3 -c 'import json,os; x=json.load(open(os.environ["RUNNER_TEMP"]+"/phase3-first.json")); assert x.get("action") in ("CODING","REVIEW","REPAIR") and x.get("task") in ("ascii-vowel-count-v1","strip-ascii-controls-v1","collapse-ascii-spaces-v1"), "no approved outstanding stage"; f=open(os.environ["GITHUB_OUTPUT"],"a"); [f.write("start_"+k+"="+(str(x.get(k,"")).lower() if k=="post_repair" else str(x.get(k,"")))+chr(10)) for k in ("action","task","pr","head","review_id","post_repair")]; f.close()'
   coder1:
     needs: admit
     if: ${{ !cancelled() && needs.admit.result == 'success' && needs.admit.outputs.start_task == 'ascii-vowel-count-v1' && needs.admit.outputs.start_action == 'CODING' }}
