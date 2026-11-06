@@ -10,9 +10,14 @@ BASE = "cdf9d8bb948d36f515e3cb8707e44baab07cd53a"
 EXPECTED = {
     ".github/workflows/ci.yml",
     ".github/workflows/phase3-preflight.yml",
+    ".github/workflows/phase3-coder-1.md",
+    ".github/workflows/phase3-coder-2.md",
+    ".github/workflows/phase3-coder-3.md",
     "docs/phase3-status.md",
     "scripts/phase3_gate.py",
     "scripts/phase3_snapshot.py",
+    "scripts/phase3_worker_ci.py",
+    "scripts/phase3_workspace_guard.py",
     "scripts/verify-phase3-install.py",
     "test/test_phase3_gate.py",
     "src/ascii-vowel-count.mjs",
@@ -57,4 +62,4 @@ for protected in [".github/workflows/phase2-chain.yml",
             "Phase 2 protected content changed: " + protected)
 subprocess.run([sys.executable, "-m", "unittest", "discover",
                 "-s", "test", "-p", "test_phase3_gate.py", "-v"], check=True)
-print("PHASE3_INSTALL_PASS: exact 13-file scoped installation; unchanged Phase 2 guards; regression suite.")
+print("PHASE3_INSTALL_PASS: exact 18-file scoped installation; unchanged Phase 2 guards; regression suite.")
