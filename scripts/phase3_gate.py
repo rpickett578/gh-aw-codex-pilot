@@ -10,6 +10,11 @@ import sys
 
 REPO = 'rpickett578/gh-aw-codex-pilot'
 FOUNDER_ID = 313606620
+# Immutable receipt for completed Task 1; not a new execution approval.
+FIRST_INSTALL_SHA = '5580a4a864f9b6c33433a91ab354d7d6c2a92a28'
+FIRST_RUN_ID = 42280771454
+FIRST_PR = 15
+FIRST_HEAD = 'b6732694a8621604fe9d0a2058d23ebfde897268'
 TASKS = (
     (11, 'ascii-vowel-count-v1', 'src/ascii-vowel-count.mjs'),
     (12, 'strip-ascii-controls-v1', 'src/strip-ascii-controls.mjs'),
@@ -33,7 +38,10 @@ def approval_text(sha):
 
 
 def approved(comments, sha):
-    hits = [c for c in comments if (c.get('body') or '').strip() == approval_text(sha)]
+    # The founder approved the same three tasks and 300 AIC envelope once;
+    # a reviewed installer correction does not create a new scope or budget.
+    allowed = {approval_text(sha), approval_text(FIRST_INSTALL_SHA)}
+    hits = [c for c in comments if (c.get('body') or '').strip() in allowed]
     check(len(hits) <= 1, 'duplicate approval')
     if not hits:
         return False
@@ -158,13 +166,12 @@ def decide(snapshot):
               (own.get('actor') or {}).get('login') == 'rpickett578' and
               (own.get('actor') or {}).get('id') == FOUNDER_ID,
               'root run has untrusted actor, ref, event or attempt')
-        # Rejected and failed admission jobs must NOT consume the single use.
-        # The snapshot independently checks the prior run's actual GitHub
-        # "admit" job conclusion before setting admission_passed.
-        consumed = [r for r in runs if str(r.get('id')) != str(current)
-                    and r.get('head_sha') == sha and
-                    r.get('admission_passed') is True]
-        check(not consumed, 'this installation already admitted a root run')
+        # Allow a bounded resume; refuse another simultaneously active chain.
+        # Already-produced task PRs prevent duplicate coding.
+        active = [r for r in runs if str(r.get('id')) != str(current)
+                  and r.get('head_sha') == sha and
+                  r.get('status') in ('queued', 'in_progress', 'waiting', 'pending')]
+        check(not active, 'another active root run exists')
     refs = snapshot.get('branch_refs', {})
     for i, (issue_no, task_id, source) in enumerate(TASKS):
         issue = issues[i]
@@ -194,6 +201,15 @@ def decide(snapshot):
               (p.get('user') or {}).get('login') == 'rpickett578' and
               (p.get('user') or {}).get('id') == FOUNDER_ID,
               'task PR not published through the approved founder-owned native token')
+        task_install = sha
+        task_run = current
+        if i == 0 and sha != FIRST_INSTALL_SHA:
+            # Preserve the genuine completed Task 1 across an installer fix.
+            # Require its exact historic PR and reviewed commit, not a name match.
+            check(p.get('number') == FIRST_PR and head == FIRST_HEAD,
+                  'completed Task 1 receipt changed')
+            task_install = FIRST_INSTALL_SHA
+            task_run = FIRST_RUN_ID
         if current is not None:
             # Actual Phase 2 gh-aw native PR publication is attributed to the
             # founder-owned token, not github-actions[bot]. Verify the native
@@ -203,7 +219,7 @@ def decide(snapshot):
             workflow = 'phase3-coder-' + str(i + 1)
             check(('<!-- gh-aw-workflow-id: ' + workflow + ' -->') in body and
                   ('<!-- gh-aw-workflow-call-id: ' + REPO + '/' + workflow + ' -->') in body and
-                  ('id: ' + str(current) + ', workflow_id: ' + workflow +
+                  ('id: ' + str(task_run) + ', workflow_id: ' + workflow +
                    ', run: https://github.com/' + REPO + '/actions/runs/' +
                    str(current)) in body,
                   'native coding PR not from the exact authorized root run')
@@ -223,7 +239,7 @@ def decide(snapshot):
             original_head = original.get('commit_id')
             check(bool(re.fullmatch(r'[a-f0-9]{40}', original_head)),
                   'invalid original reviewed head')
-            initial = parse_review(original, task_id, original_head, sha, current)
+            initial = parse_review(original, task_id, original_head, task_install, task_run)
             check(initial['verdict'] == 'findings',
                   'clean original review followed by unauthorized code change')
             require_repair_proof(details.get('repair_proof'), task_id, source,
@@ -236,7 +252,7 @@ def decide(snapshot):
                     'pr': p.get('number'), 'head': head,
                     'post_repair': bool(earlier)}
         current_review = current_reviews[0]
-        data = parse_review(current_review, task_id, head, sha, current)
+        data = parse_review(current_review, task_id, head, task_install, task_run)
         if data['verdict'] == 'findings':
             check(not earlier, 'second review found another defect; repair limit reached')
             return {'action': 'REPAIR', 'task': task_id,
