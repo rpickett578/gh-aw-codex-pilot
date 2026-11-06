@@ -99,6 +99,19 @@ class GateTests(unittest.TestCase):
         s['chain_runs']=[dict(id=100,head_sha=SHA,run_attempt=2,event='workflow_dispatch')]
         with self.assertRaises(gate.Stop):gate.decide(s)
 
+    def test_exact_native_reviewer_provenance_required(self):
+        s=complete(approve(snapshot()),1)
+        s['current_run_id']='100'
+        s['chain_runs']=[dict(id=100,head_sha=SHA,run_attempt=1,event='workflow_dispatch')]
+        with self.assertRaises(gate.Stop):gate.decide(s)
+        body=s['evidence'][gate.TASKS[0][1]]['reviews'][0]['body']
+        marker=('<!-- gh-aw-agentic-workflow: Phase3 Review, engine: codex, version: 0.165.0, '
+                'model: openai/gpt-6.1-sol, id: 100, workflow_id: phase3-review, '
+                'run: https://github.com/'+gate.REPO+'/actions/runs/100 -->')
+        call='[gh-aw-workflow-call-id]: # "rpickett578%2Fgh-aw-codex-pilot%2Fphase3-review"'
+        s['evidence'][gate.TASKS[0][1]]['reviews'][0]['body']=body+'\\n'+marker+'\\n'+call
+        self.assertEqual(gate.decide(s)['issue'],12)
+
     def test_review_findings_stop_for_explicit_repair_gate(self):
         s=complete(approve(snapshot()),1);r=s['evidence'][gate.TASKS[0][1]]['reviews'][0]
         r['body']=r['body'].replace('"verdict": "clean", "findings": []','"verdict": "findings", "findings": [{"input": "x"}]')
