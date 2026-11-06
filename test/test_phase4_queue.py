@@ -246,7 +246,11 @@ class QueueTests(unittest.TestCase):
         source = (ROOT / "scripts/phase4_queue.py").read_text()
         self.assertNotIn("urllib.request.Request(url, data=", source)
         self.assertNotIn("subprocess", source)
-        self.assertNotIn("workflow_dispatch", source)
+        # Reading a workflow_dispatch run's event is not dispatching one.
+        self.assertNotIn('method="POST"', source)
+        self.assertNotIn('method="PATCH"', source)
+        self.assertNotIn('method="PUT"', source)
+        self.assertNotIn('method="DELETE"', source)
 
 
 if __name__ == "__main__":
