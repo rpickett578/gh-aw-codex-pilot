@@ -15,6 +15,8 @@ jobs:
     # Never skip this job: an invalid dispatch MUST fail, not produce a green run.
     runs-on: ubuntu-24.04
     timeout-minutes: 3
+    outputs:
+      start_task: ${{ steps.dispatch.outputs.start_task }}
     permissions:
       contents: read
       issues: read
@@ -38,15 +40,17 @@ jobs:
         with:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
-      - name: Require exact founder approval and one unconsumed root run
+      - id: dispatch
+        name: Require existing founder approval and next outstanding task
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           python3 scripts/phase3_snapshot.py > "$RUNNER_TEMP/phase3-first.json"
-          python3 -c 'import json,os; x=json.load(open(os.environ["RUNNER_TEMP"]+"/phase3-first.json")); assert x["action"]=="CODING" and x["task"]=="ascii-vowel-count-v1" and x["issue"]==11, "first task not admitted"'
+          python3 -c 'import json,os; x=json.load(open(os.environ["RUNNER_TEMP"]+"/phase3-first.json")); assert x["action"]=="CODING" and (x["task"],x["issue"]) in [("ascii-vowel-count-v1",11),("strip-ascii-controls-v1",12)], "no approved remaining first or second task"; open(os.environ["GITHUB_OUTPUT"],"a").write("start_task="+x["task"]+"\n")'
   coder1:
     needs: admit
+    if: ${{ !cancelled() && needs.admit.result == 'success' && needs.admit.outputs.start_task == 'ascii-vowel-count-v1' }}
     uses: ./.github/workflows/phase3-coder-1.lock.yml
     permissions:
       contents: write
@@ -163,17 +167,24 @@ jobs:
       checks: read
     secrets: inherit
   next2:
-    needs: [route1, repair1, repair_ready1, second_review1]
+    needs: [admit, route1, repair1, repair_ready1, second_review1]
     if: >-
-      !cancelled() && needs.route1.result == 'success' &&
-      ((needs.route1.outputs.repair == 'false' &&
+      !cancelled() && needs.admit.result == 'success' &&
+      ((needs.admit.outputs.start_task == 'strip-ascii-controls-v1' &&
+        needs.route1.result == 'skipped' &&
         needs.repair1.result == 'skipped' &&
         needs.repair_ready1.result == 'skipped' &&
         needs.second_review1.result == 'skipped') ||
-       (needs.route1.outputs.repair == 'true' &&
-        needs.repair1.result == 'success' &&
-        needs.repair_ready1.result == 'success' &&
-        needs.second_review1.result == 'success'))
+       (needs.admit.outputs.start_task == 'ascii-vowel-count-v1' &&
+        needs.route1.result == 'success' &&
+        ((needs.route1.outputs.repair == 'false' &&
+          needs.repair1.result == 'skipped' &&
+          needs.repair_ready1.result == 'skipped' &&
+          needs.second_review1.result == 'skipped') ||
+         (needs.route1.outputs.repair == 'true' &&
+          needs.repair1.result == 'success' &&
+          needs.repair_ready1.result == 'success' &&
+          needs.second_review1.result == 'success'))))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
@@ -188,6 +199,7 @@ jobs:
         run: python3 scripts/phase3_wait.py next-ready strip-ascii-controls-v1
   coder2:
     needs: next2
+    if: ${{ !cancelled() && needs.next2.result == 'success' }}
     uses: ./.github/workflows/phase3-coder-2.lock.yml
     permissions:
       contents: write
@@ -198,6 +210,7 @@ jobs:
     secrets: inherit
   review_ready2:
     needs: coder2
+    if: ${{ !cancelled() && needs.coder2.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
@@ -218,6 +231,7 @@ jobs:
         run: python3 scripts/phase3_wait.py review-ready strip-ascii-controls-v1
   reviewer2:
     needs: review_ready2
+    if: ${{ !cancelled() && needs.review_ready2.result == 'success' }}
     uses: ./.github/workflows/phase3-review.lock.yml
     with:
       pr_number: ${{ needs.review_ready2.outputs.pr_number }}
@@ -232,6 +246,7 @@ jobs:
     secrets: inherit
   route2:
     needs: reviewer2
+    if: ${{ !cancelled() && needs.reviewer2.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
@@ -252,7 +267,7 @@ jobs:
         run: python3 scripts/phase3_route.py strip-ascii-controls-v1
   repair2:
     needs: route2
-    if: needs.route2.result == 'success' && needs.route2.outputs.repair == 'true'
+    if: !cancelled() && needs.route2.result == 'success' && needs.route2.outputs.repair == 'true'
     uses: ./.github/workflows/phase3-repair-2.lock.yml
     with:
       pr_number: ${{ needs.route2.outputs.pr_number }}
@@ -291,6 +306,7 @@ jobs:
         run: python3 scripts/phase3_wait.py repair-ready strip-ascii-controls-v1
   second_review2:
     needs: repair_ready2
+    if: ${{ !cancelled() && needs.repair_ready2.result == 'success' }}
     uses: ./.github/workflows/phase3-review.lock.yml
     with:
       pr_number: ${{ needs.repair_ready2.outputs.pr_number }}
@@ -329,6 +345,7 @@ jobs:
         run: python3 scripts/phase3_wait.py next-ready collapse-ascii-spaces-v1
   coder3:
     needs: next3
+    if: ${{ !cancelled() && needs.next3.result == 'success' }}
     uses: ./.github/workflows/phase3-coder-3.lock.yml
     permissions:
       contents: write
@@ -339,6 +356,7 @@ jobs:
     secrets: inherit
   review_ready3:
     needs: coder3
+    if: ${{ !cancelled() && needs.coder3.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
@@ -359,6 +377,7 @@ jobs:
         run: python3 scripts/phase3_wait.py review-ready collapse-ascii-spaces-v1
   reviewer3:
     needs: review_ready3
+    if: ${{ !cancelled() && needs.review_ready3.result == 'success' }}
     uses: ./.github/workflows/phase3-review.lock.yml
     with:
       pr_number: ${{ needs.review_ready3.outputs.pr_number }}
@@ -373,6 +392,7 @@ jobs:
     secrets: inherit
   route3:
     needs: reviewer3
+    if: ${{ !cancelled() && needs.reviewer3.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
@@ -393,7 +413,7 @@ jobs:
         run: python3 scripts/phase3_route.py collapse-ascii-spaces-v1
   repair3:
     needs: route3
-    if: needs.route3.result == 'success' && needs.route3.outputs.repair == 'true'
+    if: !cancelled() && needs.route3.result == 'success' && needs.route3.outputs.repair == 'true'
     uses: ./.github/workflows/phase3-repair-3.lock.yml
     with:
       pr_number: ${{ needs.route3.outputs.pr_number }}
@@ -432,6 +452,7 @@ jobs:
         run: python3 scripts/phase3_wait.py repair-ready collapse-ascii-spaces-v1
   second_review3:
     needs: repair_ready3
+    if: ${{ !cancelled() && needs.repair_ready3.result == 'success' }}
     uses: ./.github/workflows/phase3-review.lock.yml
     with:
       pr_number: ${{ needs.repair_ready3.outputs.pr_number }}
@@ -446,20 +467,32 @@ jobs:
     secrets: inherit
   acceptance:
     needs: [route3, repair3, repair_ready3, second_review3]
-    if: >-
-      !cancelled() && needs.route3.result == 'success' &&
-      ((needs.route3.outputs.repair == 'false' &&
-        needs.repair3.result == 'skipped' &&
-        needs.repair_ready3.result == 'skipped' &&
-        needs.second_review3.result == 'skipped') ||
-       (needs.route3.outputs.repair == 'true' &&
-        needs.repair3.result == 'success' &&
-        needs.repair_ready3.result == 'success' &&
-        needs.second_review3.result == 'success'))
+    if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
     steps:
+      - name: Require completed route and valid final review or repair branch
+        env:
+          ROUTE: ${{ needs.route3.result }}
+          REPAIR_REQUIRED: ${{ needs.route3.outputs.repair }}
+          REPAIR: ${{ needs.repair3.result }}
+          REPAIR_READY: ${{ needs.repair_ready3.result }}
+          SECOND_REVIEW: ${{ needs.second_review3.result }}
+        run: |
+          set -euo pipefail
+          test "$ROUTE" = success
+          if test "$REPAIR_REQUIRED" = false; then
+            test "$REPAIR" = skipped
+            test "$REPAIR_READY" = skipped
+            test "$SECOND_REVIEW" = skipped
+          else
+            test "$REPAIR_REQUIRED" = true
+            test "$REPAIR" = success
+            test "$REPAIR_READY" = success
+            test "$SECOND_REVIEW" = success
+          fi
+          echo 'PHASE3_FINAL_ROUTE_PASS'
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ github.workflow_sha }}
