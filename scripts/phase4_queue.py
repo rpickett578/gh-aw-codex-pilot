@@ -67,6 +67,18 @@ def branch_for(item):
     return prefix + item["id"]
 
 
+def workflow_path_is(path, expected):
+    """GitHub may append @main or a ref to its workflow run path."""
+    if path == expected:
+        return True
+    if not isinstance(path, str) or not path.startswith(expected + "@"):
+        return False
+    suffix = path[len(expected) + 1:]
+    return bool(suffix and len(suffix) <= 180 and
+                re.fullmatch(r"[A-Za-z0-9_./-]+", suffix) and
+                ".." not in suffix.split("/"))
+
+
 def native_review_origin(review, item, snapshot):
     actor = review.get("user") or {}
     require(actor.get("login") == "github-actions[bot]" and
@@ -87,9 +99,10 @@ def native_review_origin(review, item, snapshot):
             run.get("run_attempt") == 1 and
             run.get("status") == "completed" and
             run.get("conclusion") == "success" and
-            run.get("path") == (".github/workflows/phase3-chain.yml" if
-                                item.get("receipt") is not None else
-                                ".github/workflows/phase4-chain.yml") and
+            workflow_path_is(run.get("path"),
+                ".github/workflows/phase3-chain.yml" if
+                item.get("receipt") is not None else
+                ".github/workflows/phase4-chain.yml") and
             (run.get("actor") or {}).get("login") == "rpickett578" and
             (run.get("actor") or {}).get("id") == 313606620,
             "independent review root run did not pass attestation")
@@ -165,7 +178,7 @@ def task_status(item, snapshot):
     ci_runs = details.get("ci_runs")
     require(isinstance(ci_runs, list) and any(
             run.get("head_sha") == head and
-            run.get("path") == ".github/workflows/ci.yml" and
+            workflow_path_is(run.get("path"), ".github/workflows/ci.yml") and
             run.get("event") == "pull_request" and
             run.get("run_attempt") == 1 and
             run.get("status") == "completed" and
