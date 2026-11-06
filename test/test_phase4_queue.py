@@ -19,24 +19,42 @@ def pending(number=19, ident="pilot-next-v1"):
 
 
 def fake():
-    snapshot = {"issues": {}, "pulls": [], "evidence": {}}
+    snapshot = {"issues": {}, "pulls": [], "evidence": {}, "runs": {}}
     for item in BASE["tasks"]:
         number, head = item["receipt"]["pr"], item["receipt"]["head"]
         snapshot["issues"][str(item["issue"])] = {
             "number": item["issue"], "state": "open"}
         snapshot["pulls"].append({
             "number": number, "draft": True, "state": "open",
-            "head": {"ref": q.branch_for(item), "sha": head},
-            "base": {"ref": "main"}})
+            "head": {"ref": q.branch_for(item), "sha": head,
+                     "repo": {"full_name": q.REPO}},
+            "base": {"ref": "main", "repo": {"full_name": q.REPO}},
+            "user": {"login": "rpickett578", "id": 313606620}})
+        run_id = "42280771454" if number == 15 else "42292697441"
+        snapshot["runs"][run_id] = {
+            "repository": {"full_name": q.REPO}, "event": "workflow_dispatch",
+            "run_attempt": 1, "status": "completed", "conclusion": "success",
+            "path": ".github/workflows/phase3-chain.yml",
+            "actor": {"login": "rpickett578", "id": 313606620}}
         review = {"task": item["id"], "head": head,
                   "verdict": "clean", "findings": []}
+        body = ("\x60\x60\x60phase3-review\n" + json.dumps(review) +
+                "\n\x60\x60\x60\n" +
+                "<!-- gh-aw-agentic-workflow: Phase3 Review, id: " + run_id +
+                ", workflow_id: phase3-review, run: https://github.com/" +
+                q.REPO + "/actions/runs/" + run_id + " -->\n" +
+                '[gh-aw-workflow-call-id]: # "rpickett578%2Fgh-aw-codex-pilot%2Fphase3-review"')
         snapshot["evidence"][str(number)] = {
             "checks": [{"name": "synthetic-tests", "head_sha": head,
                         "status": "completed", "conclusion": "success",
                         "app": {"slug": "github-actions"}}],
+            "files": [{"filename": item["allowed_files"][0], "status": "modified"}],
+            "ci_runs": [{"head_sha": head, "path": ".github/workflows/ci.yml",
+                        "event": "pull_request", "run_attempt": 1,
+                        "status": "completed", "conclusion": "success"}],
             "reviews": [{"commit_id": head, "state": "COMMENTED",
-                         "body": "\x60\x60\x60phase3-review\n" +
-                                 json.dumps(review) + "\n\x60\x60\x60"}]}
+                         "user": {"login": "github-actions[bot]", "id": 41898282},
+                         "body": body}]}
     return snapshot
 
 
@@ -56,9 +74,15 @@ def add_pr(queue, snap):
     number = 25
     snap["pulls"].append({
         "number": number, "draft": True, "state": "open",
-        "head": {"ref": q.branch_for(item), "sha": head},
-        "base": {"ref": "main"}})
-    snap["evidence"][str(number)] = {"checks": [], "reviews": []}
+        "head": {"ref": q.branch_for(item), "sha": head, "repo": {"full_name": q.REPO}},
+        "base": {"ref": "main", "repo": {"full_name": q.REPO}},
+        "user": {"login": "rpickett578", "id": 313606620}})
+    snap["evidence"][str(number)] = {
+        "checks": [], "reviews": [], "files": [
+            {"filename": item["allowed_files"][0], "status": "modified"}],
+        "ci_runs": [{"head_sha": head, "path": ".github/workflows/ci.yml",
+                    "event": "pull_request", "run_attempt": 1,
+                    "status": "completed", "conclusion": "success"}]}
     return number, head
 
 
@@ -85,14 +109,29 @@ class QueueTests(unittest.TestCase):
             "status": "completed", "conclusion": "success",
             "app": {"slug": "github-actions"}})
         self.assertEqual(q.decide(manifest, snap)["action"], "READY_REVIEW")
-        payload = {"task": "pilot-next-v1", "head": head, "verdict": "findings"}
+        payload = {"task": "pilot-next-v1", "head": head, "verdict": "findings", "findings": [{}]}
+        run_id = "900001"
+        snap["runs"][run_id] = {
+            "repository": {"full_name": q.REPO}, "event": "workflow_dispatch",
+            "run_attempt": 1, "status": "completed", "conclusion": "success",
+            "path": ".github/workflows/phase4-chain.yml",
+            "actor": {"login": "rpickett578", "id": 313606620}}
+        review_body = ("\x60\x60\x60phase4-review\n" + json.dumps(payload) +
+              "\n\x60\x60\x60\n"
+              "<!-- gh-aw-agentic-workflow: Phase4 Review, id: 900001, "
+              "workflow_id: phase4-review, run: https://github.com/" +
+              q.REPO + "/actions/runs/900001 -->\n"
+              '[gh-aw-workflow-call-id]: # "rpickett578%2Fgh-aw-codex-pilot%2Fphase4-review"')
         snap["evidence"][str(number)]["reviews"] = [{
             "commit_id": head, "state": "COMMENTED",
-            "body": "\x60\x60\x60phase4-review\n" + json.dumps(payload) + "\n\x60\x60\x60"}]
+            "user": {"login": "github-actions[bot]", "id": 41898282},
+            "body": review_body}]
         self.assertEqual(q.decide(manifest, snap)["action"], "READY_REPAIR")
         payload["verdict"] = "clean"
+        payload["findings"] = []
         snap["evidence"][str(number)]["reviews"][0]["body"] = (
-            "\x60\x60\x60phase4-review\n" + json.dumps(payload) + "\n\x60\x60\x60")
+            review_body.replace(json.dumps({"task": "pilot-next-v1", "head": head,
+            "verdict": "findings", "findings": [{}]}), json.dumps(payload)))
         self.assertEqual(q.decide(manifest, snap)["action"], "QUEUE_EMPTY")
 
     def test_old_receipt_cannot_be_modified_or_replayed(self):
@@ -131,7 +170,8 @@ class QueueTests(unittest.TestCase):
 
     def test_hidden_or_parent_paths_and_unbudgeted_tasks_rejected(self):
         for source in ("../secret.txt", ".github/workflows/ci.yml",
-                       "src/../unsafe.mjs", "src//bad.mjs"):
+                       "src/../unsafe.mjs", "src//bad.mjs",
+                       "test/fixture.test.mjs", "docs/tamper.md"):
             manifest, _ = with_pending()
             manifest["tasks"][-1]["allowed_files"] = [source]
             with self.assertRaises(q.QueueError):
