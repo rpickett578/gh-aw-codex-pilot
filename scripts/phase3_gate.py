@@ -62,6 +62,73 @@ def require_ci(head, checks, runs):
           'CI run not successful first attempt')
 
 
+
+
+def parse_review(review, task_id, head, install_sha, run_id=None):
+    """Validate native COMMENT provenance and the bounded structured finding."""
+    actor = review.get('user') or {}
+    check(review.get('commit_id') == head and review.get('state') == 'COMMENTED'
+          and actor.get('login') == 'github-actions[bot]' and actor.get('id') == 41898282,
+          'review not native COMMENT at exact reviewed head')
+    body = review.get('body') or ''
+    if run_id is not None:
+        marker = ('id: ' + str(run_id) + ', workflow_id: phase3-review, run: ' +
+                  'https://github.com/' + REPO + '/actions/runs/' + str(run_id))
+        call_id = '[gh-aw-workflow-call-id]: # "rpickett578%2Fgh-aw-codex-pilot%2Fphase3-review"'
+        check(marker in body and call_id in body, 'review publication provenance invalid')
+    blocks = re.findall(r'```phase3-review\s*\n(.*?)\n```', body, re.S)
+    check(len(blocks) == 1, 'review block missing or ambiguous')
+    try:
+        data = json.loads(blocks[0])
+    except (TypeError, ValueError) as error:
+        raise Stop('invalid review JSON') from error
+    check(isinstance(data, dict) and
+          set(data) == {'install_sha', 'task', 'head', 'verdict', 'findings'} and
+          data['install_sha'] == install_sha and data['task'] == task_id and
+          data['head'] == head and data['verdict'] in ('clean', 'findings') and
+          isinstance(data['findings'], list) and len(data['findings']) <= 3 and
+          (data['verdict'] == 'clean') == (len(data['findings']) == 0),
+          'review schema or verdict invalid')
+    for item in data['findings']:
+        check(isinstance(item, dict) and
+              set(item) == {'input', 'expected', 'line', 'reason'} and
+              type(item['line']) is int and 1 <= item['line'] <= 200 and
+              isinstance(item['reason'], str) and 1 <= len(item['reason']) <= 500 and
+              len(json.dumps(item['input'])) <= 256 and
+              isinstance(item['expected'], dict) and
+              set(item['expected']) in ({'value'}, {'error'}),
+              'malformed bounded finding')
+    return data
+
+
+def require_repair_proof(proof, task_id, source, original, current):
+    """A single appended source commit, optionally followed by empty CI trigger."""
+    check(isinstance(proof, dict) and
+          proof.get('status') == 'ahead' and
+          proof.get('base_commit', {}).get('sha') == original and
+          proof.get('merge_base_commit', {}).get('sha') == original,
+          'repair not appended to original reviewed head')
+    commits = proof.get('commits') or []
+    check(1 <= len(commits) <= 2 and
+          proof.get('ahead_by') == len(commits) and
+          commits[-1].get('sha') == current,
+          'multiple repairs, side history or wrong repair head')
+    first = commits[0]
+    check(len(first.get('parents') or []) == 1 and
+          first['parents'][0].get('sha') == original,
+          'repair source commit not sole child of original')
+    check(len(proof.get('files') or []) == 1 and
+          proof['files'][0].get('filename') == source and
+          proof['files'][0].get('status') == 'modified',
+          'repair changed other source files')
+    if len(commits) == 2:
+        last = commits[1]
+        check(len(last.get('parents') or []) == 1 and
+              last['parents'][0].get('sha') == first.get('sha') and
+              last.get('commit', {}).get('tree', {}).get('sha') ==
+              first.get('commit', {}).get('tree', {}).get('sha'),
+              'second commit not native empty CI trigger')
+
 def decide(snapshot):
     sha = snapshot.get('install_sha', '')
     check(bool(re.fullmatch(r'[a-f0-9]{40}', sha)), 'installation SHA invalid')
@@ -119,37 +186,37 @@ def decide(snapshot):
         check(len(files) == 1 and files[0].get('filename') == source and
               files[0].get('status') == 'modified', 'PR changed unauthorized files')
         require_ci(head, details.get('checks') or [], details.get('runs') or [])
-        reviews = [r for r in details.get('reviews', []) if r.get('commit_id') == head and
-                   '```phase3-review' in (r.get('body') or '')]
-        check(len(reviews) <= 1, 'duplicate review')
-        if not reviews:
-            return {'action': 'REVIEW', 'task': task_id, 'pr': p.get('number'), 'head': head}
-        review = reviews[0]
-        if current is not None:
-            # Authenticate the native gh-aw publication marker from THIS root
-            # run, not another bot COMMENT with a copied JSON payload.
-            body = review.get('body') or ''
-            marker = ('id: ' + str(current) + ', workflow_id: phase3-review, run: ' +
-                      'https://github.com/' + REPO + '/actions/runs/' + str(current))
-            call_id = '[gh-aw-workflow-call-id]: # "rpickett578%2Fgh-aw-codex-pilot%2Fphase3-review"'
-            check(marker in body and call_id in body,
-                  'review not published by exact hosted reviewer run')
-        actor = review.get('user') or {}
-        check(review.get('state') == 'COMMENTED' and
-              actor.get('login') == 'github-actions[bot]' and actor.get('id') == 41898282,
-              'review is not independent COMMENT publication')
-        blocks = re.findall(r'```phase3-review\s*\n(.*?)\n```', review['body'], re.S)
-        check(len(blocks) == 1, 'invalid review evidence')
-        payload = json.loads(blocks[0])
-        check(set(payload) == {'install_sha', 'task', 'head', 'verdict', 'findings'} and
-              payload['install_sha'] == sha and payload['task'] == task_id and
-              payload['head'] == head and payload['verdict'] in ('clean', 'findings') and
-              isinstance(payload['findings'], list) and len(payload['findings']) <= 3 and
-              (payload['verdict'] == 'clean') == (len(payload['findings']) == 0),
-              'review evidence inconsistent')
-        if payload['verdict'] == 'findings':
-            return {'action': 'STOP', 'reason': 'REPAIR_NOT_YET_PROVEN',
-                    'task': task_id, 'pr': p.get('number')}
+        all_reviews = [r for r in details.get('reviews', [])
+                       if '```phase3-review' in (r.get('body') or '')]
+        current_reviews = [r for r in all_reviews if r.get('commit_id') == head]
+        earlier = [r for r in all_reviews if r.get('commit_id') != head]
+        check(len(current_reviews) <= 1 and len(earlier) <= 1,
+              'duplicate, stale or third independent review')
+        if earlier:
+            original = earlier[0]
+            original_head = original.get('commit_id')
+            check(bool(re.fullmatch(r'[a-f0-9]{40}', original_head)),
+                  'invalid original reviewed head')
+            initial = parse_review(original, task_id, original_head, sha, current)
+            check(initial['verdict'] == 'findings',
+                  'clean original review followed by unauthorized code change')
+            require_repair_proof(details.get('repair_proof'), task_id, source,
+                                 original_head, head)
+            orig_ci = details.get('original_ci') or {}
+            require_ci(original_head, orig_ci.get('checks') or [],
+                       orig_ci.get('runs') or [])
+        if not current_reviews:
+            return {'action': 'REVIEW', 'task': task_id,
+                    'pr': p.get('number'), 'head': head,
+                    'post_repair': bool(earlier)}
+        current_review = current_reviews[0]
+        data = parse_review(current_review, task_id, head, sha, current)
+        if data['verdict'] == 'findings':
+            check(not earlier, 'second review found another defect; repair limit reached')
+            return {'action': 'REPAIR', 'task': task_id,
+                    'pr': p.get('number'), 'head': head,
+                    'review_id': current_review.get('id')}
+
     return {'action': 'STOP', 'reason': 'THREE_TASKS_COMPLETE'}
 
 
