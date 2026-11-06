@@ -125,6 +125,15 @@ def decide(snapshot):
         if not reviews:
             return {'action': 'REVIEW', 'task': task_id, 'pr': p.get('number'), 'head': head}
         review = reviews[0]
+        if current is not None:
+            # Authenticate the native gh-aw publication marker from THIS root
+            # run, not another bot COMMENT with a copied JSON payload.
+            body = review.get('body') or ''
+            marker = ('id: ' + str(current) + ', workflow_id: phase3-review, run: ' +
+                      'https://github.com/' + REPO + '/actions/runs/' + str(current))
+            call_id = '[gh-aw-workflow-call-id]: # "rpickett578%2Fgh-aw-codex-pilot%2Fphase3-review"'
+            check(marker in body and call_id in body,
+                  'review not published by exact hosted reviewer run')
         actor = review.get('user') or {}
         check(review.get('state') == 'COMMENTED' and
               actor.get('login') == 'github-actions[bot]' and actor.get('id') == 41898282,
