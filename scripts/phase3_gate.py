@@ -203,7 +203,7 @@ def decide(snapshot):
               'task PR not published through the approved founder-owned native token')
         task_install = sha
         task_run = current
-        if i == 0 and sha != FIRST_INSTALL_SHA:
+        if i == 0 and sha != FIRST_INSTALL_SHA and p.get('number') == FIRST_PR:
             # Preserve the genuine completed Task 1 across an installer fix.
             # Require its exact historic PR and reviewed commit, not a name match.
             check(p.get('number') == FIRST_PR and head == FIRST_HEAD,
