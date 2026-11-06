@@ -221,7 +221,7 @@ def decide(snapshot):
                   ('<!-- gh-aw-workflow-call-id: ' + REPO + '/' + workflow + ' -->') in body and
                   ('id: ' + str(task_run) + ', workflow_id: ' + workflow +
                    ', run: https://github.com/' + REPO + '/actions/runs/' +
-                   str(current)) in body,
+                   str(task_run)) in body,
                   'native coding PR not from the exact authorized root run')
         details = snapshot.get('evidence', {}).get(task_id) or {}
         files = details.get('files') or []
