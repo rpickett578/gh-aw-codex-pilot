@@ -1,70 +1,70 @@
-# Phase 3 — bounded three-task synthetic pilot (NOT YET EXECUTED)
+# Phase 3 — finite three-task GitHub Actions + Codex pilot (UNEXECUTED)
 
-Updated 2026-11-06. Draft PR #14 contains a finite GitHub-native continuation graph;
-it does not touch Call Captain production, Dot, the production app, or customer data.
+**November 6, 2026.** The only target is `rpickett578/gh-aw-codex-pilot`.
+No changes to Call Captain production, Dot, TestFlight, credentials or customer data.
 
-## Actual implemented scope
+## Installed in Draft PR #14
 
-- Founder-gated read-only selector: Issue #10 plus candidate Issues #11, #12, #13.
-- `phase3-chain.yml`: three sequential native Codex coder calls, each followed by
-  actual GitHub CI check admission and separate independent COMMENT-only review.
-  GitHub schedules the next coder only after the previous exact-head review is clean.
-- Three static one-file worker gh-aw sources and pinned generated locks, plus one
-  dynamic-target reviewer source and pinned generated lock.
-- Compiled using official gh-aw v1.0.1, with GPT-6.1 Sol / Medium, no fallback,
-  zero retries, no network and per-stage bounds.
-- Native Draft PR publication only; one ordinary local source commit per coder,
-  no automated merge, approval, production operation or deployment.
-- Host-only source, ref and index guard. Source-only functional CI uses the trusted
-  base-branch verifier and 11 tests per task.
-- Bounded read-only metadata waits (up to 18 observations, ten seconds apart).
-  Missing/failed CI, changed branches/heads, unauthorized task, duplicate run,
-  malformed review or empty queue stops the chain. No retry of an AI job.
-- Exact founder-only issue comment tied to reviewed installed main SHA is required
-  before any paid call. One root workflow_dispatch per installation SHA; concurrent
-  root runs are serialized and subsequent runs fail the one-shot admission.
+- Candidate Issues #11, #12, #13 in strict order, with Issue #10 as the
+  exact-main-SHA founder-authored execution approval gate.
+- Root `phase3-chain.yml` invokes three source-only native Codex workers,
+  independently validates each Draft PR's actual passing GitHub CI,
+  publishes a separate COMMENT-only review, and invokes the next task
+  only after clean exact-head review evidence.
+- **One conditional correction per task:** a genuine, independently
+  reproducible reviewer finding is verified against the pinned original
+  source with a trusted task-specific oracle and credential-free Node
+  process. The correction worker may create **one appended non-merge commit**
+  to the original PR source only. Native gh-aw
+  `push-to-pull-request-branch` performs append-only publication.
+- After publication, the host requires exact native repair commit ancestry,
+  at most one extra empty CI-trigger commit, unchanged authorized scope,
+  actual passing CI on the updated PR head, and resolution of all original
+  findings. The revised head receives a second independent COMMENT review.
+  If that review finds another issue, **STOP**, no second repair.
+- Real-Git checkout/HEAD/index/branch/file guards reject uncommitted-only
+  edits, extra commits, wrong refs, unauthorized files and other drift.
+- Seven worker/reviewer/repair sources compiled by pinned official
+  gh-aw v1.0.1; their exact generated locks are SHA-256 pinned by
+  `scripts/verify-phase3-install.py`. Root and preflight pass
+  pinned actionlint v1.7.7.
+- All native generated worker PRs remain **Draft**, unmerged and unapproved.
+  No self-dispatch, force push, merge, production deployment or release.
 
-## Hosted evidence
+## Verified evidence (distinguish from live pilot)
 
-- Earlier Phase 2 real chain: run 41913643056 / Draft PR #9, kept unchanged.
-- Official gh-aw compilation of four workflows: run 42262622344.
-- Hosted installer CI, 18 regression tests, all four workflow compilations,
-  pinned actionlint v1.7.7 for root and preflight: run 42263369900, PASS.
-- The exact generated coder/reviewer workflow SHA-256 hashes are retained in
-  `scripts/verify-phase3-install.py`, checked for complete non-partial installation.
-- Historical interim commits with failing CI do not constitute accepted state.
-  Only latest exact-head checks qualify for review.
+- Phase 2 real baseline: [run 41913643056](https://github.com/rpickett578/gh-aw-codex-pilot/actions/runs/41913643056)
+  and Draft PR #9 remain unchanged.
+- [Run 42267329203](https://github.com/rpickett578/gh-aw-codex-pilot/actions/runs/42267329203)
+  succeeded: **19 queue/review/repair-admission tests**, **9 independently
+  run local real-Git and credential-free reproduction tests**, **7 compiled
+  gh-aw workflows**, and **root actionlint PASS**.
+- The compiled repair sources are installed on Draft PR #14 from official
+  compiler artifacts, with hashes checked against original GitHub logs.
+  Only a successful latest-head CI validates the final installation.
 
-## Limits and remaining proof
+**Not yet proven:** native repair publisher's full authenticated gateway/push
+and updated-head CI in a real paid worker run; three actual unattended coder
+PRs and reviews; reliable recovery after external failures. Offline native
+incremental contract was previously audited in Phase 2 and requires a
+committed repair; Phase 3 uses committed append-only edits but has not yet
+performed real remote repair publication.
 
-**No Phase 3 hosted Codex execution has been dispatched yet.** Thus there are
-no Phase 3 worker PRs, reviewer publications or full unattended three-task run.
-Compiler/actionlint/CI checks are installation evidence, not live continuation.
+## Budget and authority
 
-**Authentic review findings currently STOP:** `REPAIR_NOT_YET_PROVEN`.
-The previous Phase 2 uncommitted-vs-native committed repair mismatch is not
-silently bypassed. At most one evidence-based repair must be implemented,
-compiled, independently tested and admitted before calling automatic correction
-proven. A clean-path pilot could be separately approved while preserving this
-fail-closed boundary.
+Coder+detector: 3 x (25+8) = 99 AIC.
+Independent first reviewer+detector: 3 x (15+8) = 69 AIC.
+Optional one repair+detector per task: 3 x (15+8) = 69 AIC.
+Optional second reviewer+detector for every repaired task: 3 x (15+8) = 69 AIC.
+The full configured worst case is **306 AIC**, which **exceeds** the
+Issue #10 stated 300 AIC pilot cap. Therefore the full three-repair path
+requires a stricter budget choice *before* dispatch; do not treat 300 as a
+guaranteed invoice ceiling. A clean run is 168 AIC. Every stage has zero
+automatic retries. The original Issue #10 execution approval is still absent.
 
-Cost configuration for the clean path is a finite 3 * (25 coder + 8 detection +
-15 review + 8 detection) = **168 maximum configured AIC units**; this is an
-upper bound on configured stage budgets, not an API invoice guarantee. Issue #10
-sets 300 AIC maximum for a future broader test, which is NOT authorization to
-spend it.
+Keep Draft PR #14 unmerged until independent human review and founder
+authorization. A separate founder-authored exact merged-main-SHA comment on
+Issue #10 is required before a single bounded paid pilot run. No execution
+approval is implied by passing tests or this document.
 
-## Authority and activation
-
-Keep Draft PR #14 unmerged until an independent human reviews its exact head
-and required CI. The founder must explicitly authorize any merge. Only after
-a reviewed installation is merged to main can the founder explicitly authorize
-one paid Phase 3 run: exact INSTALL_SHA, candidate Issues #11–#13, limits and
-root workflow. Preserve founder approval for production, releases and merges.
-
-No new credentials or broadened GitHub PAT scopes are requested. The existing
-GH_AW_CI_TRIGGER_TOKEN cannot push workflow-file updates directly; official
-compiled locks were instead installed into this Draft PR using the already
-authorized connected GitHub capability, then rechecked by CI.
-
-Dot is never part of engineering scheduling or worker execution.
+Dot consumes future engineering status; it never dispatches workers.
