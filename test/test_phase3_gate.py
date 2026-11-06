@@ -30,7 +30,7 @@ def complete(s, count, include_review=True):
         head = str(n % 10) * 40
         pr=dict(number=n+100,state='open',draft=True,head=dict(ref='codex/phase3-'+task,
             sha=head,repo=dict(full_name=gate.REPO)),base=dict(ref='main',repo=dict(full_name=gate.REPO)),
-            user=dict(login='github-actions[bot]'))
+            user=dict(login='rpickett578',id=313606620))
         s['pull_requests'].append(pr)
         evidence=dict(files=[dict(filename=src,status='modified')],
             checks=[dict(name='synthetic-tests',head_sha=head,status='completed',conclusion='success',app=dict(slug='github-actions'))],
@@ -110,7 +110,16 @@ class GateTests(unittest.TestCase):
                 'run: https://github.com/'+gate.REPO+'/actions/runs/100 -->')
         call='[gh-aw-workflow-call-id]: # "rpickett578%2Fgh-aw-codex-pilot%2Fphase3-review"'
         s['evidence'][gate.TASKS[0][1]]['reviews'][0]['body']=body+'\n'+marker+'\n'+call
+        workflow='phase3-coder-1'
+        s['pull_requests'][0]['body']=(
+            '<!-- gh-aw-workflow-id: '+workflow+' -->\n'
+            '<!-- gh-aw-workflow-call-id: '+gate.REPO+'/'+workflow+' -->\n'
+            '<!-- gh-aw-agentic-workflow: Phase3 Coder 1, id: 100, workflow_id: '
+            +workflow+', run: https://github.com/'+gate.REPO+'/actions/runs/100 -->')
         self.assertEqual(gate.decide(s)['issue'],12)
+        s['pull_requests'][0]['body']=s['pull_requests'][0]['body'].replace(
+            'workflow_id: phase3-coder-1', 'workflow_id: fake')
+        with self.assertRaises(gate.Stop):gate.decide(s)
 
     def test_review_findings_select_exactly_one_bounded_repair(self):
         s=complete(approve(snapshot()),1);r=s['evidence'][gate.TASKS[0][1]]['reviews'][0]
