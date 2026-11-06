@@ -121,7 +121,7 @@ def compare(before, after, stage, root=None):
 
 def baseline_path(root):
     temporary = Path(os.environ["RUNNER_TEMP"]).resolve()
-    directory = temporary / "phase2-workspace-guard"
+    directory = temporary / "phase3-workspace-guard"
     require(not directory.is_symlink(), "symlink baseline directory")
     require(not directory.is_relative_to(root), "baseline cannot be in workspace")
     # These are the only temporary trees mounted by the pinned compiled sandbox.
