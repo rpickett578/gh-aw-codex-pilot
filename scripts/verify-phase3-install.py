@@ -43,10 +43,10 @@ LOCK_SHA256 = {
     ".github/workflows/phase3-coder-1.lock.yml": "4f3877524da8038cf8a648e24a2d2f27f1a24cd061a32ef238654b8dc9c35184",
     ".github/workflows/phase3-coder-2.lock.yml": "03ad2d0c3030cd8f8e5a860a4485210a40676a922c8e3f87faff7e88baf384d5",
     ".github/workflows/phase3-coder-3.lock.yml": "7eb898f746fdde939c561fb7bfae5d77e6bd1788612ddce57f7495d85358f6a6",
-    ".github/workflows/phase3-review.lock.yml": "1d451eadba30aed771ac6afaf0e91658ffa02b2f396422eddc1a177d38729d0b",
-    ".github/workflows/phase3-repair-1.lock.yml": "PENDING_PINNED_COMPILER_SHA256",
-    ".github/workflows/phase3-repair-2.lock.yml": "PENDING_PINNED_COMPILER_SHA256",
-    ".github/workflows/phase3-repair-3.lock.yml": "PENDING_PINNED_COMPILER_SHA256",
+    ".github/workflows/phase3-review.lock.yml": "b6a4e27726936fd7ba9511909d39f03d51188513673004316b5cdd686c0c8bf4",
+    ".github/workflows/phase3-repair-1.lock.yml": "c250ec3765a95a12e559f9a5b7e6220aaea3dccc19a2bc4b2d9324e01f56a1ac",
+    ".github/workflows/phase3-repair-2.lock.yml": "7bdbbac51fc953a571aa965be5f0813fb096eeafa7b8170d878c61c66f1c7110",
+    ".github/workflows/phase3-repair-3.lock.yml": "c44a99fce74690014487d1f2393c354bb5edc05d36920aeca8df203067442934",
 }
 
 def require(ok, reason):
