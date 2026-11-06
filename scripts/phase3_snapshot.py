@@ -59,7 +59,7 @@ def collect():
     for _, task_id, source in TASKS:
         branch = "codex/phase3-" + task_id
         ref = api("/git/ref/heads/" + quote(branch, safe="/"), optional=True)
-        branch_refs[task_id] = ref is not None
+        branch_refs[task_id] = (ref.get("object") or {}).get("sha") if ref else None
         matches = [p for p in prs if p.get("head", {}).get("ref") == branch]
         if len(matches) == 1:
             pr = matches[0]
