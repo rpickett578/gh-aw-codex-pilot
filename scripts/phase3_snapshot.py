@@ -98,6 +98,26 @@ def collect():
     if chain_run_id:
         chain_runs = bounded("/actions/workflows/phase3-chain.yml/runs?event=workflow_dispatch&per_page=100",
                              key="workflow_runs")
+        for run in chain_runs:
+            if (str(run.get("id")) == str(chain_run_id) or
+                    run.get("head_sha") != sha or
+                    run.get("head_branch") != "main" or
+                    run.get("run_attempt") != 1 or
+                    run.get("event") != "workflow_dispatch" or
+                    (run.get("actor") or {}).get("login") != "rpickett578" or
+                    (run.get("actor") or {}).get("id") != 313606620):
+                # Includes every skipped/unauthorized dispatch: never consumed.
+                continue
+            run_id = run.get("id")
+            check(type(run_id) is int and run_id > 0, "invalid prior chain run id")
+            jobs = bounded("/actions/runs/" + str(run_id) + "/jobs?per_page=100", key="jobs")
+            admission = [job for job in jobs if job.get("name") == "admit"]
+            check(len(admission) <= 1, "duplicate GitHub admission jobs")
+            run["admission_passed"] = (
+                len(admission) == 1 and admission[0].get("status") == "completed"
+                and admission[0].get("conclusion") == "success"
+                and admission[0].get("run_attempt") == 1
+            )
     return dict(install_sha=sha, workflow_sha=sha,
         repository=REPO, ref="refs/heads/main", run_attempt=1,
         current_run_id=chain_run_id,
