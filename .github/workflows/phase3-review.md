@@ -15,7 +15,7 @@ engine:
     multi_agent = false
 model: openai/gpt-6.1-sol
 max-turns: 15
-max-ai-credits: 15
+max-ai-credits: 12
 network:
   allowed: []
 sandbox:
