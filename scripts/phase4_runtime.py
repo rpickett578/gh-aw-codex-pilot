@@ -29,7 +29,8 @@ def admit(verify_checkout=True):
     main = get("/branches/main")
     require(main.get("commit", {}).get("sha") == sha,
             "workflow source is no longer exact approved main")
-    manifest = json.loads(QUEUE_FILE.read_text(encoding="utf-8"))
+    manifest_path = Path(os.environ.get("PHASE4_QUEUE_PATH", str(QUEUE_FILE)))
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     tasks = validate(manifest)
     snapshot = live_snapshot(tasks)
     selected = decide(manifest, snapshot)
