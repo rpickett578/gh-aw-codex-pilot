@@ -127,12 +127,12 @@ jobs:
         run: |
           set -euo pipefail
           gh extension install github/gh-aw --pin v1.0.1
-          for id in phase3-coder-1 phase3-coder-2 phase3-coder-3 phase3-review; do
+          for id in phase3-coder-1 phase3-coder-2 phase3-coder-3 phase3-review phase3-repair-1 phase3-repair-2 phase3-repair-3; do
             gh aw compile "$id" --strict
             test -s ".github/workflows/$id.lock.yml"
             echo "PHASE3_COMPILE_PASS $id"
           done
-          sha256sum .github/workflows/phase3-coder-*.lock.yml .github/workflows/phase3-review.lock.yml
+          sha256sum .github/workflows/phase3-coder-*.lock.yml .github/workflows/phase3-review.lock.yml .github/workflows/phase3-repair-*.lock.yml
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: github.event.pull_request.base.sha == 'cdf9d8bb948d36f515e3cb8707e44baab07cd53a' && github.event.pull_request.head.ref == 'codex/phase3-three-task-pilot' && github.event.pull_request.head.repo.full_name == github.repository
         with:
@@ -140,8 +140,29 @@ jobs:
           path: |
             .github/workflows/phase3-coder-*.lock.yml
             .github/workflows/phase3-review.lock.yml
+            .github/workflows/phase3-repair-*.lock.yml
           if-no-files-found: error
           retention-days: 7
+      - name: Export compiled locks as checksummed read-only review evidence
+        if: github.event.pull_request.base.sha == 'cdf9d8bb948d36f515e3cb8707e44baab07cd53a' && github.event.pull_request.head.ref == 'codex/phase3-three-task-pilot' && github.event.pull_request.head.repo.full_name == github.repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          for idx in (4, 5, 6, 7):
+              name = 'phase3-review' if idx == 4 else f'phase3-repair-{idx-4}'
+              path = Path(f'.github/workflows/{name}.lock.yml')
+              payload = path.read_bytes()
+              digest = hashlib.sha256(payload).hexdigest()
+              serialized = json.dumps(payload.decode('utf-8'), ensure_ascii=True)
+              chunks = [serialized[i:i+2048] for i in range(0, len(serialized), 2048)]
+              print(f'PHASE3_LOCK_INFO:{idx}:{digest}:{len(payload)}:{len(chunks)}')
+              for part, chunk in enumerate(chunks):
+                  print(f'PHASE3_LOCK_CHUNK:{idx}:{part}:{len(chunks)}:{chunk}')
+          PY
       - name: Lint finite root chain and read-only preflight with pinned actionlint
         if: github.event.pull_request.base.sha == 'cdf9d8bb948d36f515e3cb8707e44baab07cd53a' && github.event.pull_request.head.ref == 'codex/phase3-three-task-pilot' && github.event.pull_request.head.repo.full_name == github.repository
         env:
@@ -157,23 +178,3 @@ jobs:
           )
           "$RUNNER_TEMP/actionlint" -color .github/workflows/phase3-chain.yml .github/workflows/phase3-preflight.yml
           echo PHASE3_ROOT_ACTIONLINT_PASS
-      - name: Export compiled locks as checksummed read-only review evidence
-        if: github.event.pull_request.base.sha == 'cdf9d8bb948d36f515e3cb8707e44baab07cd53a' && github.event.pull_request.head.ref == 'codex/phase3-three-task-pilot' && github.event.pull_request.head.repo.full_name == github.repository
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import hashlib
-          import json
-          from pathlib import Path
-          for idx in (1, 2, 3, 4):
-              name = f'phase3-coder-{idx}' if idx < 4 else 'phase3-review'
-              path = Path(f'.github/workflows/{name}.lock.yml')
-              payload = path.read_bytes()
-              digest = hashlib.sha256(payload).hexdigest()
-              serialized = json.dumps(payload.decode('utf-8'), ensure_ascii=True)
-              chunks = [serialized[i:i+2048] for i in range(0, len(serialized), 2048)]
-              print(f'PHASE3_LOCK_INFO:{idx}:{digest}:{len(payload)}:{len(chunks)}')
-              for part, chunk in enumerate(chunks):
-                  print(f'PHASE3_LOCK_CHUNK:{idx}:{part}:{len(chunks)}:{chunk}')
-          PY
