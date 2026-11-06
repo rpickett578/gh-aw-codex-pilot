@@ -118,7 +118,10 @@ class GateTests(unittest.TestCase):
           user=dict(login='rpickett578',id=313606620,type='User'),
           author_association='OWNER')]
         s['current_run_id']='200'
-        s['chain_runs']=[chain_run(200)]
+        original=chain_run(gate.FIRST_RUN_ID, admitted=True)
+        original['head_sha']=gate.FIRST_INSTALL_SHA
+        original['paid_stages']=['coder1', 'reviewer1']
+        s['chain_runs']=[chain_run(200),original]
         s['reviewed_resume_install']=True
         pr=s['pull_requests'][0]
         pr['number']=gate.FIRST_PR
@@ -166,12 +169,25 @@ class GateTests(unittest.TestCase):
                                     ('review_ready3','reviewer3','coder3'),
                                     ('reviewer3','route3','review_ready3'),
                                     ('route3','repair3','reviewer3')]:
-            self.assertIn("!cancelled() && needs."+dependency+".result == 'success'",
+            self.assertIn("needs."+dependency+".result == 'success'",
                           job(name,nxt))
+            self.assertIn("!cancelled()",job(name,nxt))
         acceptance=workflow.split('  acceptance:\n',1)[1]
         self.assertIn('    if: always()',acceptance)
         self.assertIn('PHASE3_FINAL_ROUTE_PASS',acceptance)
         self.assertIn('test "$ROUTE" = success',acceptance)
+        self.assertIn('start_action: ${{ steps.dispatch.outputs.start_action }}',admit)
+        self.assertIn('start_post_repair: ${{ steps.dispatch.outputs.start_post_repair }}',admit)
+        for i in (1,2,3):
+            task=('ascii-vowel-count-v1','strip-ascii-controls-v1',
+                  'collapse-ascii-spaces-v1')[i-1]
+            src=job('repair'+str(i),'repair_ready'+str(i))
+            self.assertIn("needs.admit.outputs.start_action == 'REPAIR'",src)
+            self.assertIn("needs.admit.outputs.start_head",src)
+            review=job('second_review'+str(i),'next'+str(i+1)) if i<3 else job('second_review3','acceptance')
+            self.assertIn("needs.admit.outputs.start_post_repair == 'true'",review)
+        self.assertIn("needs.admit.outputs.start_task == 'collapse-ascii-spaces-v1'",
+                      job('next3','coder3'))
 
     def test_unreviewed_install_cannot_reuse_original_authorization(self):
         s=snapshot()
@@ -181,6 +197,32 @@ class GateTests(unittest.TestCase):
         self.assertEqual(gate.decide(s)['reason'], 'FOUNDER_APPROVAL_MISSING')
         s['reviewed_resume_install']=True
         self.assertEqual(gate.decide(s)['issue'],11)
+
+    def test_historical_native_coder2_and_reviewer2_provenance(self):
+        s=complete(approve(snapshot()),2)
+        s['current_run_id']='200'
+        previous=chain_run(101,admitted=True)
+        previous['paid_stages']=['coder1','reviewer1','coder2','reviewer2']
+        s['chain_runs']=[chain_run(200),previous]
+        for index,task in enumerate(gate.TASKS[:2]):
+            number,t,source=task
+            pr=s['pull_requests'][index]
+            workflow='phase3-coder-'+str(index+1)
+            pr['body']=(
+                '<!-- gh-aw-workflow-id: '+workflow+' -->\\n'
+                '<!-- gh-aw-workflow-call-id: '+gate.REPO+'/'+workflow+' -->\\n'
+                '<!-- gh-aw-agentic-workflow: Phase3 Coder, id: 101, workflow_id: '+
+                workflow+', run: https://github.com/'+gate.REPO+
+                '/actions/runs/101 -->')
+            review=s['evidence'][t]['reviews'][0]
+            review['body']+='\\n<!-- gh-aw-agentic-workflow: Phase3 Review, id: 101, workflow_id: phase3-review, run: https://github.com/'+gate.REPO+'/actions/runs/101 -->'
+            review['body']+='\\n[gh-aw-workflow-call-id]: # "rpickett578%2Fgh-aw-codex-pilot%2Fphase3-review"'
+        result=gate.decide(s)
+        self.assertEqual(result['task'],gate.TASKS[2][1])
+        self.assertEqual(result['action'],'CODING')
+        s['chain_runs'][1]['admission_passed']=False
+        with self.assertRaises(gate.Stop):
+            gate.decide(s)
 
     def test_cumulative_paid_stage_attempts_block_duplicate_and_unknown(self):
         s=approve(snapshot())
