@@ -11,7 +11,9 @@ import sys
 
 from phase4_queue import QUEUE_FILE, REPO, QueueError, decide, get, live_snapshot, require, validate
 
-STAGE_BUDGET = {"READY_CODING": 33, "READY_REVIEW": 20}
+# Reserve the combined worst-case coder(25+8) + independent review(12+8)
+# before first paid launch; a single per-task budget cannot fund each twice.
+STAGE_BUDGET = {"READY_CODING": 53, "READY_REVIEW": 53}
 CONTEXT = Path("/tmp/gh-aw/phase4-task-context.json")
 
 
