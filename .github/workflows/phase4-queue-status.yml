@@ -1,0 +1,54 @@
+name: Phase 4 ordered queue status (read-only)
+run-name: phase4-pilot-queue-status
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - phase4/queue.json
+      - scripts/phase4_queue.py
+      - .github/workflows/phase4-queue-status.yml
+permissions: {}
+concurrency:
+  group: phase4-readonly-pilot-queue
+  cancel-in-progress: false
+jobs:
+  inspect:
+    if: >-
+      github.repository == 'rpickett578/gh-aw-codex-pilot' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' && github.actor == 'rpickett578'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      checks: read
+      actions: read
+    outputs:
+      action: ${{ steps.queue.outputs.action }}
+      task: ${{ steps.queue.outputs.task }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Regression-check the approved queue selector
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s test -p 'test_phase4_queue.py' -v
+      - id: queue
+        name: Select first unfinished task from durable ordered queue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/phase4_queue.py --live | tee "$RUNNER_TEMP/phase4-queue-status.json"
+          python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); assert s["action"] in ("QUEUE_EMPTY","READY_CODING","WAIT_CI","READY_REVIEW","READY_REPAIR"), "invalid queue state"; print("PHASE4_READ_ONLY_STATUS", s["action"])' "$RUNNER_TEMP/phase4-queue-status.json"
+      - name: Confirm no paid worker dispatch exists in this workflow
+        run: |
+          echo 'PHASE4_NO_PAID_DISPATCH: admission/status only; no Codex worker, merge or production action'
