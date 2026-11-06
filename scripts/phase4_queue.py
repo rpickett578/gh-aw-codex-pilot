@@ -89,7 +89,7 @@ def native_review_origin(review, item, snapshot):
             actor.get("id") == 41898282 and review.get("state") == "COMMENTED",
             "review was not published by GitHub Actions")
     body = review.get("body") or ""
-    workflow = "phase3-review" if item.get("receipt") is not None else "phase4-review"
+    workflow = "phase3-review" if item["id"] in LEGACY_PHASE3_IDS else "phase4-review"
     call = '[gh-aw-workflow-call-id]: # "rpickett578%2Fgh-aw-codex-pilot%2F' + workflow + '"'
     require(call in body, "native review call identity missing")
     expr = (r'id: ([0-9]+), workflow_id: ' + re.escape(workflow) +
@@ -105,7 +105,7 @@ def native_review_origin(review, item, snapshot):
             run.get("conclusion") == "success" and
             workflow_path_is(run.get("path"),
                 ".github/workflows/phase3-chain.yml" if
-                item.get("receipt") is not None else
+                item["id"] in LEGACY_PHASE3_IDS else
                 ".github/workflows/phase4-chain.yml") and
             (run.get("actor") or {}).get("login") == "rpickett578" and
             (run.get("actor") or {}).get("id") == 313606620,
