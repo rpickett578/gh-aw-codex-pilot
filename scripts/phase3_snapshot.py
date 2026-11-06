@@ -76,9 +76,20 @@ def reviewed_resume_install(sha):
     checks = bounded("/commits/" + head + "/check-runs?per_page=100", key="check_runs")
     for name in ("synthetic-tests", "scheduling_proof"):
         matched = [x for x in checks if x.get("name") == name]
-        if not matched or any(x.get("status") != "completed" or
+        if not matched or any(x.get("head_sha") != head or
+                              (x.get("app") or {}).get("slug") != "github-actions" or
+                              x.get("status") != "completed" or
                               x.get("conclusion") != "success" for x in matched):
             return False
+    ci_runs = bounded("/actions/workflows/ci.yml/runs?event=pull_request&head_sha=" + head + "&per_page=100",
+                      key="workflow_runs")
+    if not any(run.get("head_sha") == head and
+               run.get("path") == ".github/workflows/ci.yml" and
+               run.get("event") == "pull_request" and
+               run.get("run_attempt") == 1 and
+               run.get("status") == "completed" and
+               run.get("conclusion") == "success" for run in ci_runs):
+        return False
     return clean
 
 
