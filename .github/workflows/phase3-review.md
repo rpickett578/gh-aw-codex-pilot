@@ -143,7 +143,14 @@ Include precisely one fenced structured JSON block:
 
 Replace the placeholders using /tmp/gh-aw/phase3-review-context.json.
 For an authentic correctness defect, use verdict "findings" and at most 3
-reproducible findings, each containing input, expected, line, reason. Never
-report style-only findings. The host will block continuation on findings
-pending independent verification of the bounded repair contract. No automatic
-APPROVE, REQUEST_CHANGES, merge, or code writes.
+reproducible findings. Each finding MUST contain exactly "input", "expected",
+"line", and "reason". "input" must be a compact JSON value (not code).
+"expected" MUST be {"value": <JSON result>} or {"error":"TypeError"}, never
+a raw result. "line" must be a valid line number in the reviewed source.
+"reason" must be a concise reproducible correctness explanation. The
+trusted host separately computes the expected result from the task contract,
+executes the exact reviewed source without credentials and rejects invented,
+nonreproducing or contradictory findings. Never report style-only findings.
+If this is a second review after a one-commit correction, no second repair
+is allowed; report genuine defects without attempting another correction.
+No automatic APPROVE, REQUEST_CHANGES, merge, or code writes.
