@@ -111,6 +111,8 @@ jobs:
             git show "$HEAD_SHA:scripts/verify-phase2-install.py" > "$verifier"
           elif [ "$BASE_SHA" = cdf9d8bb948d36f515e3cb8707e44baab07cd53a ] && [ "$HEAD_BRANCH" = codex/phase3-three-task-pilot ] && [ "$HEAD_REPOSITORY" = "$REPOSITORY" ]; then
             git show "$HEAD_SHA:scripts/verify-phase3-install.py" > "$verifier"
+          elif [ "$HEAD_REPOSITORY" = "$REPOSITORY" ] && [[ "$HEAD_BRANCH" == codex/phase3-ascii-vowel-count-v1 || "$HEAD_BRANCH" == codex/phase3-strip-ascii-controls-v1 || "$HEAD_BRANCH" == codex/phase3-collapse-ascii-spaces-v1 ]]; then
+            git show "$BASE_SHA:scripts/phase3_worker_ci.py" > "$verifier"
           elif git cat-file -e "$BASE_SHA:scripts/verify-pilot-ci.py" 2>/dev/null; then
             git show "$BASE_SHA:scripts/verify-pilot-ci.py" > "$verifier"
           else
