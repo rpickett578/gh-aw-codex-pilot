@@ -3,6 +3,7 @@
 Never used to admit worker PRs; those must remain source-only.
 """
 import os
+import hashlib
 import subprocess
 import sys
 
@@ -29,6 +30,12 @@ EXPECTED = {
 }
 
 
+LOCK_SHA256 = {
+    ".github/workflows/phase3-coder-1.lock.yml": "500359933eeed1572f75a16a6cef509f870bdb8674e1c2ac437da2c84f91ed7c",
+    ".github/workflows/phase3-coder-2.lock.yml": "9bd5c789ea76978735f96777d975b822e14dac09adc8c2de6e706f38433ecad8",
+    ".github/workflows/phase3-coder-3.lock.yml": "ac90e60c541eaadc29a86530849509827ead6f6db8f689dbdfeac9d197c3608f",
+}
+
 def require(ok, reason):
     if not ok:
         raise SystemExit("FAIL: " + reason)
@@ -48,8 +55,15 @@ require(os.environ["BASE_SHA"] == BASE and
 require(git("rev-parse", "HEAD") == os.environ["HEAD_SHA"],
         "checked out wrong PR head")
 changed = set(git("diff", "--name-only", BASE + "..." + os.environ["HEAD_SHA"]).splitlines())
-require(changed == EXPECTED,
-        "exact Phase 3 installation file inventory differs: " + repr(sorted(changed ^ EXPECTED)))
+compiled = changed & set(LOCK_SHA256)
+require(compiled == set() or compiled == set(LOCK_SHA256),
+        "partial compiled lock installation prohibited")
+allowed = EXPECTED | compiled
+require(changed == allowed,
+        "exact Phase 3 installation file inventory differs: " + repr(sorted(changed ^ allowed)))
+for lock in compiled:
+    recorded = hashlib.sha256(subprocess.check_output(["git", "show", os.environ["HEAD_SHA"] + ":" + lock])).hexdigest()
+    require(recorded == LOCK_SHA256[lock], "compiled lock checksum differs: " + lock)
 subprocess.run(["git", "diff", "--check", BASE + "..." + os.environ["HEAD_SHA"]], check=True)
 for protected in [".github/workflows/phase2-chain.yml",
                   ".github/workflows/phase2-next.lock.yml",
@@ -62,4 +76,4 @@ for protected in [".github/workflows/phase2-chain.yml",
             "Phase 2 protected content changed: " + protected)
 subprocess.run([sys.executable, "-m", "unittest", "discover",
                 "-s", "test", "-p", "test_phase3_gate.py", "-v"], check=True)
-print("PHASE3_INSTALL_PASS: exact 18-file scoped installation; unchanged Phase 2 guards; regression suite.")
+print("PHASE3_INSTALL_PASS: bounded installer, optional exact three compiled lock files; unchanged Phase 2 guards; regression suite.")
