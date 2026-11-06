@@ -139,6 +139,11 @@ class QueueTests(unittest.TestCase):
               "expected": {"value": "good"}, "line": 1,
               "reason": "wrong output"}]}), json.dumps(payload)))
         self.assertEqual(q.decide(manifest, snap)["action"], "QUEUE_EMPTY")
+        # Persist a completion receipt without converting genuine phase4 origin
+        # markers to phase3; future queue entries must continue to progress.
+        manifest["tasks"][-1]["receipt"] = {"pr": number, "head": head}
+        manifest["tasks"][-1]["max_ai_credits"] = 0
+        self.assertEqual(q.decide(manifest, snap)["action"], "QUEUE_EMPTY")
 
     def test_old_receipt_cannot_be_modified_or_replayed(self):
         snap = fake()
