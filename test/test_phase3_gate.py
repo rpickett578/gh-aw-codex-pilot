@@ -19,6 +19,14 @@ def snapshot():
                         for n,task,src in gate.TASKS], pull_requests=[], evidence={})
 
 
+def chain_run(run_id=100, actor='rpickett578', actor_id=313606620,
+              head_branch='main', attempt=1, admitted=False):
+    return dict(id=run_id, head_sha=SHA, head_branch=head_branch,
+                event='workflow_dispatch', run_attempt=attempt,
+                actor=dict(login=actor, id=actor_id),
+                admission_passed=admitted)
+
+
 def approve(s):
     s['approval_comments']=[dict(body=gate.approval_text(SHA),
        user=dict(login='rpickett578',id=313606620,type='User'), author_association='OWNER')]
@@ -88,21 +96,49 @@ class GateTests(unittest.TestCase):
     def test_one_installed_run_only(self):
         s=approve(snapshot())
         s['current_run_id']='100'
-        s['chain_runs']=[dict(id=100,head_sha=SHA,run_attempt=1,event='workflow_dispatch')]
+        s['chain_runs']=[chain_run()]
         self.assertEqual(gate.decide(s)['issue'],11)
-        s['chain_runs'].append(dict(id=101,head_sha=SHA,run_attempt=1,event='workflow_dispatch'))
-        with self.assertRaises(gate.Stop):gate.decide(s)
+        # Rejected/failed attempts on this SHA do not consume the approval.
+        s['chain_runs'].append(chain_run(101, actor='stranger', actor_id=100,
+                                          admitted=False))
+        s['chain_runs'].append(chain_run(102, admitted=False))
+        s['chain_runs'].append(chain_run(103, head_branch='other', admitted=False))
+        self.assertEqual(gate.decide(s)['issue'],11)
+        # Only a real prior successful admission job consumes the one-shot.
+        s['chain_runs'].append(chain_run(104, admitted=True))
+        with self.assertRaises(gate.Stop):
+            gate.decide(s)
+
+    def test_untrusted_current_root_dispatch_fails(self):
+        s=approve(snapshot())
+        s['current_run_id']='100'
+        s['chain_runs']=[chain_run(actor='stranger', actor_id=100)]
+        with self.assertRaises(gate.Stop):
+            gate.decide(s)
+        s['chain_runs']=[chain_run(head_branch='other')]
+        with self.assertRaises(gate.Stop):
+            gate.decide(s)
 
     def test_rerun_denied(self):
         s=approve(snapshot())
         s['current_run_id']='100'
-        s['chain_runs']=[dict(id=100,head_sha=SHA,run_attempt=2,event='workflow_dispatch')]
-        with self.assertRaises(gate.Stop):gate.decide(s)
+        s['chain_runs']=[chain_run(attempt=2)]
+        with self.assertRaises(gate.Stop):
+            gate.decide(s)
+
+    def test_root_workflow_has_non_skippable_admission(self):
+        workflow=(Path(__file__).resolve().parents[1] /
+                  '.github/workflows/phase3-chain.yml').read_text()
+        admission=workflow.split('  admit:\\n',1)[1].split('  coder1:\\n',1)[0]
+        self.assertNotIn('    if:',admission)
+        self.assertIn('Deny an unauthorized dispatch visibly', admission)
+        self.assertIn('test "$GITHUB_ACTOR" = rpickett578', admission)
+        self.assertIn('test "$PHASE3_INSTALL_SHA" = "$GITHUB_WORKFLOW_SHA"',admission)
 
     def test_exact_native_reviewer_provenance_required(self):
         s=complete(approve(snapshot()),1)
         s['current_run_id']='100'
-        s['chain_runs']=[dict(id=100,head_sha=SHA,run_attempt=1,event='workflow_dispatch')]
+        s['chain_runs']=[chain_run()]
         with self.assertRaises(gate.Stop):gate.decide(s)
         body=s['evidence'][gate.TASKS[0][1]]['reviews'][0]['body']
         marker=('<!-- gh-aw-agentic-workflow: Phase3 Review, engine: codex, version: 0.165.0, '
