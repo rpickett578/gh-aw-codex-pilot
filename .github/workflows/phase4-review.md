@@ -38,12 +38,17 @@ pre-agent-steps:
       GH_TOKEN: ${{ github.token }}
     run: |
       set -euo pipefail
-      python3 scripts/phase4_runtime.py pre
+      for script in phase4_queue.py phase4_runtime.py; do
+        gh api "repos/rpickett578/gh-aw-codex-pilot/contents/scripts/$script?ref=$GITHUB_WORKFLOW_SHA" --jq .content | base64 --decode > "$RUNNER_TEMP/$script"
+      done
+      mkdir -p "$RUNNER_TEMP/phase4"
+      gh api "repos/rpickett578/gh-aw-codex-pilot/contents/phase4/queue.json?ref=$GITHUB_WORKFLOW_SHA" --jq .content | base64 --decode > "$RUNNER_TEMP/phase4/queue.json"
+      PHASE4_QUEUE_PATH="$RUNNER_TEMP/phase4/queue.json" PHASE4_HOST_CONTEXT_PATH="$RUNNER_TEMP/phase4-host-context.json" PYTHONPATH="$RUNNER_TEMP" python3 "$RUNNER_TEMP/phase4_runtime.py" pre
 post-steps:
   - name: Preserve exact independent-review checkout
     run: |
       set -euo pipefail
-      python3 scripts/phase4_runtime.py post
+      PHASE4_HOST_CONTEXT_PATH="$RUNNER_TEMP/phase4-host-context.json" PYTHONPATH="$RUNNER_TEMP" python3 "$RUNNER_TEMP/phase4_runtime.py" post
 safe-outputs:
   max-patch-files: 1
   report-failure-as-issue: false
