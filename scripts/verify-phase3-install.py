@@ -34,9 +34,10 @@ EXPECTED = {
 
 
 LOCK_SHA256 = {
-    ".github/workflows/phase3-coder-1.lock.yml": "500359933eeed1572f75a16a6cef509f870bdb8674e1c2ac437da2c84f91ed7c",
-    ".github/workflows/phase3-coder-2.lock.yml": "9bd5c789ea76978735f96777d975b822e14dac09adc8c2de6e706f38433ecad8",
-    ".github/workflows/phase3-coder-3.lock.yml": "ac90e60c541eaadc29a86530849509827ead6f6db8f689dbdfeac9d197c3608f",
+    ".github/workflows/phase3-coder-1.lock.yml": "4f3877524da8038cf8a648e24a2d2f27f1a24cd061a32ef238654b8dc9c35184",
+    ".github/workflows/phase3-coder-2.lock.yml": "03ad2d0c3030cd8f8e5a860a4485210a40676a922c8e3f87faff7e88baf384d5",
+    ".github/workflows/phase3-coder-3.lock.yml": "7eb898f746fdde939c561fb7bfae5d77e6bd1788612ddce57f7495d85358f6a6",
+    ".github/workflows/phase3-review.lock.yml": "1d451eadba30aed771ac6afaf0e91658ffa02b2f396422eddc1a177d38729d0b",
 }
 
 def require(ok, reason):
