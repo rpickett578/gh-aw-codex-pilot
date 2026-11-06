@@ -104,10 +104,73 @@ class GateTests(unittest.TestCase):
         s['chain_runs'].append(chain_run(102, admitted=False))
         s['chain_runs'].append(chain_run(103, head_branch='other', admitted=False))
         self.assertEqual(gate.decide(s)['issue'],11)
-        # Only a real prior successful admission job consumes the one-shot.
+        # Prior successful admission is not a permanent approval reset.
+        # Existing task PRs and active-run checks still prevent duplicates.
         s['chain_runs'].append(chain_run(104, admitted=True))
+        self.assertEqual(gate.decide(s)['issue'],11)
+        s['chain_runs'][-1]['status']='in_progress'
         with self.assertRaises(gate.Stop):
             gate.decide(s)
+
+    def test_previous_approved_run_task_one_receipt_resumes_at_task_two(self):
+        s=complete(snapshot(),1)
+        s['approval_comments']=[dict(body=gate.approval_text(gate.FIRST_INSTALL_SHA),
+          user=dict(login='rpickett578',id=313606620,type='User'),
+          author_association='OWNER')]
+        s['current_run_id']='200'
+        s['chain_runs']=[chain_run(200)]
+        pr=s['pull_requests'][0]
+        pr['number']=gate.FIRST_PR
+        pr['head']['sha']=gate.FIRST_HEAD
+        task=gate.TASKS[0][1]
+        e=s['evidence'][task]
+        e['checks'][0]['head_sha']=gate.FIRST_HEAD
+        e['runs'][0]['head_sha']=gate.FIRST_HEAD
+        e['reviews'][0]['commit_id']=gate.FIRST_HEAD
+        payload=dict(install_sha=gate.FIRST_INSTALL_SHA,task=task,
+                     head=gate.FIRST_HEAD,verdict='clean',findings=[])
+        run=str(gate.FIRST_RUN_ID)
+        workflow='phase3-coder-1'
+        marker=('<!-- gh-aw-agentic-workflow: Phase3 Review, id: '+run+
+                ', workflow_id: phase3-review, run: https://github.com/'+
+                gate.REPO+'/actions/runs/'+run+' -->')
+        call='[gh-aw-workflow-call-id]: # "rpickett578%2Fgh-aw-codex-pilot%2Fphase3-review"'
+        e['reviews'][0]['body']='\x60\x60\x60phase3-review\\n'+json.dumps(payload)+'\\n\x60\x60\x60\\n'+marker+'\\n'+call
+        pr['body']=(
+            '<!-- gh-aw-workflow-id: '+workflow+' -->\\n'
+            '<!-- gh-aw-workflow-call-id: '+gate.REPO+'/'+workflow+' -->\\n'
+            '<!-- gh-aw-agentic-workflow: Phase3 Coder 1, id: '+run+
+            ', workflow_id: '+workflow+', run: https://github.com/'+
+            gate.REPO+'/actions/runs/'+run+' -->')
+        self.assertEqual(gate.decide(s)['issue'],12)
+        pr['head']['sha']='f'*40
+        with self.assertRaises(gate.Stop):
+            gate.decide(s)
+
+    def test_resume_handoff_and_acceptance_cannot_silently_skip(self):
+        workflow=(Path(__file__).resolve().parents[1] /
+                  '.github/workflows/phase3-chain.yml').read_text()
+        def job(name, next_name):
+            return workflow.split('  '+name+':\\n',1)[1].split('  '+next_name+':\\n',1)[0]
+        admit=job('admit','coder1')
+        self.assertIn('start_task: ${{ steps.dispatch.outputs.start_task }}',admit)
+        self.assertIn('strip-ascii-controls-v1',admit)
+        next2=job('next2','coder2')
+        self.assertIn("needs.admit.outputs.start_task == 'strip-ascii-controls-v1'",next2)
+        for name,nxt,dependency in [('coder2','review_ready2','next2'),
+                                    ('review_ready2','reviewer2','coder2'),
+                                    ('reviewer2','route2','review_ready2'),
+                                    ('route2','repair2','reviewer2'),
+                                    ('coder3','review_ready3','next3'),
+                                    ('review_ready3','reviewer3','coder3'),
+                                    ('reviewer3','route3','review_ready3'),
+                                    ('route3','repair3','reviewer3')]:
+            self.assertIn("!cancelled() && needs."+dependency+".result == 'success'",
+                          job(name,nxt))
+        acceptance=workflow.split('  acceptance:\\n',1)[1]
+        self.assertIn('    if: always()',acceptance)
+        self.assertIn('PHASE3_FINAL_ROUTE_PASS',acceptance)
+        self.assertIn('test "$ROUTE" = success',acceptance)
 
     def test_untrusted_current_root_dispatch_fails(self):
         s=approve(snapshot())
