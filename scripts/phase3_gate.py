@@ -68,8 +68,8 @@ def verified_workflow_origin(snapshot, body, workflow, current_sha, current_run)
     """Bind a persisted native publication to its actual admitted root run."""
     check(isinstance(body, str), 'native workflow marker missing')
     expr = (r'id: ([0-9]+), workflow_id: ' + re.escape(workflow) +
-            r', run: https://github\\.com/' + re.escape(REPO) +
-            r'/actions/runs/\\1')
+            r', run: https://github\.com/' + re.escape(REPO) +
+            r'/actions/runs/\1')
     origin_ids = re.findall(expr, body)
     check(len(origin_ids) == 1, 'native workflow origin missing or ambiguous')
     origin_id = int(origin_ids[0])
