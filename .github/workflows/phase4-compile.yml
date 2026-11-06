@@ -17,6 +17,13 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
+      - name: Test reviewed queue admission and exact source-only guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s test -p 'test_phase4_runtime.py' -v
+          python3 -m unittest discover -s test -p 'test_phase4_queue.py' -v
+          python3 -m py_compile scripts/phase4_runtime.py
       - name: Compile generic Codex agents without running or paying for them
         env:
           GH_TOKEN: ${{ github.token }}
