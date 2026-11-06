@@ -15,6 +15,14 @@ FIRST_INSTALL_SHA = '5580a4a864f9b6c33433a91ab354d7d6c2a92a28'
 FIRST_RUN_ID = 42280771454
 FIRST_PR = 15
 FIRST_HEAD = 'b6732694a8621604fe9d0a2058d23ebfde897268'
+
+# Conservative configured maximum per paid agent stage, including its detector.
+STAGE_COSTS = {
+    **{'coder' + str(n): 33 for n in (1, 2, 3)},
+    **{'reviewer' + str(n): 20 for n in (1, 2, 3)},
+    **{'repair' + str(n): 23 for n in (1, 2, 3)},
+    **{'second_review' + str(n): 20 for n in (1, 2, 3)},
+}
 TASKS = (
     (11, 'ascii-vowel-count-v1', 'src/ascii-vowel-count.mjs'),
     (12, 'strip-ascii-controls-v1', 'src/strip-ascii-controls.mjs'),
@@ -37,10 +45,12 @@ def approval_text(sha):
             '\nMAX_REPAIRS_PER_TASK: 1\nMAX_TOTAL_AI_CREDITS: 300')
 
 
-def approved(comments, sha):
-    # The founder approved the same three tasks and 300 AIC envelope once;
-    # a reviewed installer correction does not create a new scope or budget.
-    allowed = {approval_text(sha), approval_text(FIRST_INSTALL_SHA)}
+def approved(comments, sha, reviewed_resume=False):
+    # Reuse the original scoped approval ONLY for the exact reviewed PR16
+    # merge of the approved original install, verified by the read-only host.
+    allowed = {approval_text(sha)}
+    if reviewed_resume:
+        allowed.add(approval_text(FIRST_INSTALL_SHA))
     hits = [c for c in comments if (c.get('body') or '').strip() in allowed]
     check(len(hits) <= 1, 'duplicate approval')
     if not hits:
@@ -144,7 +154,8 @@ def decide(snapshot):
           snapshot.get('ref') == 'refs/heads/main' and
           snapshot.get('workflow_sha') == sha and
           snapshot.get('run_attempt') == 1, 'installation identity mismatch')
-    if not approved(snapshot.get('approval_comments', []), sha):
+    if not approved(snapshot.get('approval_comments', []), sha,
+                    snapshot.get('reviewed_resume_install') is True):
         return {'action': 'STOP', 'reason': 'FOUNDER_APPROVAL_MISSING'}
     issues = snapshot.get('issues') or []
     check(len(issues) == 3, 'issue inventory differs')
@@ -172,6 +183,21 @@ def decide(snapshot):
                   and r.get('head_sha') == sha and
                   r.get('status') in ('queued', 'in_progress', 'waiting', 'pending')]
         check(not active, 'another active root run exists')
+        previous_stages = []
+        for run in runs:
+            if str(run.get('id')) != str(current) and run.get('admission_passed') is True:
+                items = run.get('paid_stages') or []
+                check(isinstance(items, list), 'paid stage ledger malformed')
+                for stage in items:
+                    check(isinstance(stage, str) and stage in STAGE_COSTS,
+                          'unknown paid stage in earlier admitted run')
+                    previous_stages.append(stage)
+        check(len(set(previous_stages)) == len(previous_stages),
+              'paid stage was previously repeated across runs')
+        check(sum(STAGE_COSTS[name] for name in previous_stages) <= 300,
+              'cumulative configured stage budget exceeded')
+    else:
+        previous_stages = []
     refs = snapshot.get('branch_refs', {})
     for i, (issue_no, task_id, source) in enumerate(TASKS):
         issue = issues[i]
@@ -186,6 +212,8 @@ def decide(snapshot):
             # Native publication may create the remote branch before the PR.
             # In that case stop; do not spawn a duplicate worker.
             check(not refs.get(task_id), 'task branch exists without Draft PR')
+            check('coder' + str(i + 1) not in previous_stages,
+                  'coding attempt already spent on a previous root run')
             return {'action': 'CODING', 'task': task_id, 'issue': issue_no,
                     'source': source, 'branch': branch}
         p = matches[0]
@@ -248,6 +276,9 @@ def decide(snapshot):
             require_ci(original_head, orig_ci.get('checks') or [],
                        orig_ci.get('runs') or [])
         if not current_reviews:
+            review_stage = ('second_review' if earlier else 'reviewer') + str(i + 1)
+            check(review_stage not in previous_stages,
+                  'review attempt already spent on a previous root run')
             return {'action': 'REVIEW', 'task': task_id,
                     'pr': p.get('number'), 'head': head,
                     'post_repair': bool(earlier)}
@@ -255,6 +286,8 @@ def decide(snapshot):
         data = parse_review(current_review, task_id, head, task_install, task_run)
         if data['verdict'] == 'findings':
             check(not earlier, 'second review found another defect; repair limit reached')
+            check('repair' + str(i + 1) not in previous_stages,
+                  'repair attempt already spent on a previous root run')
             return {'action': 'REPAIR', 'task': task_id,
                     'pr': p.get('number'), 'head': head,
                     'review_id': current_review.get('id')}
