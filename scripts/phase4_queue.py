@@ -13,6 +13,9 @@ QUEUE_FILE = Path(__file__).resolve().parents[1] / "phase4" / "queue.json"
 TASK_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
 SHA_RE = re.compile(r"[a-f0-9]{40}\Z")
 SOURCE_RE = re.compile(r"src/[a-zA-Z0-9_./-]+\Z")
+LEGACY_PHASE3_IDS = frozenset(("ascii-vowel-count-v1",
+                               "strip-ascii-controls-v1",
+                               "collapse-ascii-spaces-v1"))
 
 
 class QueueError(Exception):
@@ -63,7 +66,8 @@ def validate(manifest):
 
 
 def branch_for(item):
-    prefix = "codex/phase3-" if item.get("receipt") is not None else "codex/phase4-"
+    # Do not change a Phase 4 PR branch when a completion receipt is attached.
+    prefix = "codex/phase3-" if item["id"] in LEGACY_PHASE3_IDS else "codex/phase4-"
     return prefix + item["id"]
 
 
@@ -124,11 +128,27 @@ def review_verdict(reviews, item, head, snapshot):
             result = json.loads(marker[0])
         except (ValueError, TypeError) as exc:
             raise QueueError("malformed structured review JSON") from exc
-        require(isinstance(result, dict) and result.get("task") == item["id"] and
+        require(isinstance(result, dict) and
+                set(result) == ({"install_sha", "task", "head", "verdict", "findings"}
+                                if item["id"] in LEGACY_PHASE3_IDS else
+                                {"task", "head", "verdict", "findings"}) and
+                result.get("task") == item["id"] and
                 result.get("head") == head and result.get("verdict") in ("clean", "findings") and
                 isinstance(result.get("findings"), list) and
+                len(result["findings"]) <= 3 and
                 (result["verdict"] == "clean") == (len(result["findings"]) == 0),
                 "review task/head/verdict does not match the queued work")
+        for finding in result["findings"]:
+            require(isinstance(finding, dict) and
+                    set(finding) == {"input", "expected", "line", "reason"} and
+                    type(finding["line"]) is int and
+                    1 <= finding["line"] <= 200 and
+                    isinstance(finding["reason"], str) and
+                    1 <= len(finding["reason"]) <= 500 and
+                    len(json.dumps(finding["input"])) <= 256 and
+                    isinstance(finding["expected"], dict) and
+                    set(finding["expected"]) in ({"value"}, {"error"}),
+                    "review finding is malformed or oversized")
         matches.append(result["verdict"])
     require(len(matches) <= 1, "duplicate independent structured review")
     return matches[0] if matches else None
