@@ -15,7 +15,7 @@ engine:
     multi_agent = false
 model: openai/gpt-6.1-sol
 max-turns: 15
-max-ai-credits: 25
+max-ai-credits: 15
 network:
   allowed: []
 sandbox:
@@ -64,7 +64,7 @@ safe-outputs:
   threat-detection:
     continue-on-error: false
     report-as-issue: false
-    max-ai-credits: 10
+    max-ai-credits: 8
     engine:
       id: codex
       version: 0.165.0
