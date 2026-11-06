@@ -109,15 +109,15 @@ class GateTests(unittest.TestCase):
                 'model: openai/gpt-6.1-sol, id: 100, workflow_id: phase3-review, '
                 'run: https://github.com/'+gate.REPO+'/actions/runs/100 -->')
         call='[gh-aw-workflow-call-id]: # "rpickett578%2Fgh-aw-codex-pilot%2Fphase3-review"'
-        s['evidence'][gate.TASKS[0][1]]['reviews'][0]['body']=body+'\\n'+marker+'\\n'+call
+        s['evidence'][gate.TASKS[0][1]]['reviews'][0]['body']=body+'\n'+marker+'\n'+call
         self.assertEqual(gate.decide(s)['issue'],12)
 
     def test_review_findings_select_exactly_one_bounded_repair(self):
         s=complete(approve(snapshot()),1);r=s['evidence'][gate.TASKS[0][1]]['reviews'][0]
         finding={'input':'Ae','expected':{'value':2},'line':2,'reason':'missed vowel'}
-        body=json.loads(r['body'].split('phase3-review\\n')[1].split('\\n')[0])
+        body=json.loads(r['body'].split('phase3-review\n')[1].split('\n')[0])
         body['verdict']='findings';body['findings']=[finding]
-        r['body']='```phase3-review\\n'+json.dumps(body)+'\\n```'
+        r['body']='```phase3-review\n'+json.dumps(body)+'\n```'
         d=gate.decide(s)
         self.assertEqual((d['action'], d['task'], d['review_id']),('REPAIR',gate.TASKS[0][1],None))
 
@@ -125,10 +125,10 @@ class GateTests(unittest.TestCase):
         s=complete(approve(snapshot()),1)
         task=gate.TASKS[0][1];e=s['evidence'][task];r=e['reviews'][0]
         original=r['commit_id']
-        data=json.loads(r['body'].split('phase3-review\\n')[1].split('\\n')[0])
+        data=json.loads(r['body'].split('phase3-review\n')[1].split('\n')[0])
         data['verdict']='findings'
         data['findings']=[{'input':'Ae','expected':{'value':2},'line':2,'reason':'missed'}]
-        r['body']='```phase3-review\\n'+json.dumps(data)+'\\n```'
+        r['body']='```phase3-review\n'+json.dumps(data)+'\n```'
         current='f'*40
         s['pull_requests'][0]['head']['sha']=current
         e['checks'][0]['head_sha']=current;e['runs'][0]['head_sha']=current
@@ -142,7 +142,7 @@ class GateTests(unittest.TestCase):
             'files':[{'filename':gate.TASKS[0][2],'status':'modified'}]}
         self.assertEqual(gate.decide(s)['action'],'REVIEW')
         d2=dict(data,head=current,verdict='clean',findings=[])
-        e['reviews'].append(dict(r,commit_id=current,body='```phase3-review\\n'+json.dumps(d2)+'\\n```'))
+        e['reviews'].append(dict(r,commit_id=current,body='```phase3-review\n'+json.dumps(d2)+'\n```'))
         self.assertEqual(gate.decide(s)['issue'],12)
         e['repair_proof']['commits'].append({'sha':'e'*40,'parents':[{'sha':current}]})
         with self.assertRaises(gate.Stop):gate.decide(s)
