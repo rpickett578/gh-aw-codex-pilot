@@ -132,6 +132,7 @@ jobs:
           test "$REPOSITORY" = 'rpickett578/gh-aw-codex-pilot'
           test "$HEAD_REPOSITORY" = "$REPOSITORY"
           python3 -m unittest discover -s test -p 'test_phase3_gate.py' -v
+          python3 -m unittest discover -s test -p 'test_phase3_snapshot.py' -v
           python3 -m unittest discover -s test -p 'test_phase3_repair.py' -v
           git diff --check "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}"
           gh release download v1.7.7 -R rhysd/actionlint -p actionlint_1.7.7_linux_amd64.tar.gz -p actionlint_1.7.7_checksums.txt -D "$RUNNER_TEMP"
