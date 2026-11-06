@@ -11,6 +11,8 @@ BASE = "cdf9d8bb948d36f515e3cb8707e44baab07cd53a"
 EXPECTED = {
     ".github/workflows/ci.yml",
     ".github/workflows/phase3-preflight.yml",
+    ".github/workflows/phase3-chain.yml",
+    ".github/workflows/phase3-review.md",
     ".github/workflows/phase3-coder-1.md",
     ".github/workflows/phase3-coder-2.md",
     ".github/workflows/phase3-coder-3.md",
@@ -18,6 +20,7 @@ EXPECTED = {
     "scripts/phase3_gate.py",
     "scripts/phase3_snapshot.py",
     "scripts/phase3_worker_ci.py",
+    "scripts/phase3_wait.py",
     "scripts/phase3_workspace_guard.py",
     "scripts/verify-phase3-install.py",
     "test/test_phase3_gate.py",
