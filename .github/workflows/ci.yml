@@ -140,3 +140,40 @@ jobs:
           path: .github/workflows/phase3-coder-*.lock.yml
           if-no-files-found: error
           retention-days: 7
+      - name: Install the reviewed compiler output into this Draft PR branch only
+        if: github.event.pull_request.base.sha == 'cdf9d8bb948d36f515e3cb8707e44baab07cd53a' && github.event.pull_request.head.ref == 'codex/phase3-three-task-pilot' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == 'rpickett578'
+        env:
+          GH_TOKEN: ${{ secrets.GH_AW_CI_TRIGGER_TOKEN }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$GH_TOKEN"
+          test "$(git rev-parse HEAD)" = "$PR_HEAD_SHA"
+          gh auth setup-git
+          remote_head="$(git ls-remote origin refs/heads/codex/phase3-three-task-pilot | cut -f1)"
+          test "$remote_head" = "$PR_HEAD_SHA"
+          expected=(phase3-coder-1.lock.yml phase3-coder-2.lock.yml phase3-coder-3.lock.yml)
+          for filename in "${expected[@]}"; do
+            test -s ".github/workflows/$filename"
+          done
+          if git cat-file -e "HEAD:.github/workflows/phase3-coder-1.lock.yml" 2>/dev/null; then
+            for filename in "${expected[@]}"; do
+              git cat-file -e "HEAD:.github/workflows/$filename" || exit 1
+              test -z "$(git diff -- ".github/workflows/$filename")"
+            done
+            echo "PHASE3_LOCKS_ALREADY_INSTALLED"
+            exit 0
+          fi
+          for filename in "${expected[@]}"; do
+            if git cat-file -e "HEAD:.github/workflows/$filename" 2>/dev/null; then
+              echo "Partial lock installation denied: $filename"
+              exit 1
+            fi
+          done
+          git add -- .github/workflows/phase3-coder-1.lock.yml .github/workflows/phase3-coder-2.lock.yml .github/workflows/phase3-coder-3.lock.yml
+          test "$(git diff --cached --name-only | wc -l)" -eq 3
+          git diff --cached --check
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Compile pinned Phase 3 worker lock files for Draft PR review'
+          git push origin HEAD:refs/heads/codex/phase3-three-task-pilot
+          echo "PHASE3_LOCKS_COMMITTED_TO_DRAFT_PR"
