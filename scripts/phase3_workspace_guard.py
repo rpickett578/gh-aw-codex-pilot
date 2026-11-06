@@ -83,7 +83,7 @@ def snapshot(root):
 
 def compare(before, after, stage, root=None):
     require(stage in ALLOWED, "unknown guard stage")
-    if stage in NEXT_BRANCHES[stage]ES:
+    if stage in NEXT_BRANCHES:
         require(root is not None, "real Git checkout required to verify next commit")
         root = Path(root).resolve()
         require(ALLOWED[stage] in before["index"] and before["index"][ALLOWED[stage]].startswith("100644 "),
@@ -140,7 +140,7 @@ def main():
     if mode == "capture":
         path.parent.mkdir(mode=0o700, exist_ok=False)
         state = snapshot(root)
-        if stage in NEXT_BRANCHES[stage]ES:
+        if stage in NEXT_BRANCHES:
             require(state["head"] == identity["workflow_sha"], "next checkout is not the pinned workflow HEAD")
             require("refs/heads/" + NEXT_BRANCHES[stage] not in state["refs"], "approved local branch already exists")
             source = ALLOWED[stage]
