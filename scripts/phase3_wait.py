@@ -8,6 +8,7 @@ import sys
 import time
 from phase3_gate import Stop, decide, require_ci, TASKS
 from phase3_snapshot import collect
+from phase3_repair_evidence import admit_after
 
 TASK_IDS = {task for _, task, _ in TASKS}
 TRANSIENT = (
@@ -44,9 +45,9 @@ def output(**items):
 
 
 def main():
-    require(len(sys.argv) == 3, 'usage: phase3_wait.py review-ready|next-ready|complete task_id')
+    require(len(sys.argv) == 3, 'usage: phase3_wait.py review-ready|repair-ready|next-ready|complete task_id')
     mode, task_id = sys.argv[1:]
-    require(mode in ('review-ready', 'next-ready', 'complete') and task_id in TASK_IDS,
+    require(mode in ('review-ready', 'repair-ready', 'next-ready', 'complete') and task_id in TASK_IDS,
             'unexpected gate transition')
     expected_pr = os.environ.get('EXPECTED_PR', '')
     if mode == 'review-ready':
@@ -55,6 +56,13 @@ def main():
         require(os.environ.get('EXPECTED_URL') ==
                 'https://github.com/rpickett578/gh-aw-codex-pilot/pull/' + expected_pr,
                 'native PR URL differs')
+    if mode == 'repair-ready':
+        expected_pr = os.environ.get('TARGET_PR', '')
+        require(expected_pr.isascii() and expected_pr.isdigit() and int(expected_pr) > 0,
+                'repaired target PR number missing')
+        require(len(os.environ.get('ORIGINAL_HEAD', '')) == 40 and
+                len(os.environ.get('NATIVE_REPAIR_SHA', '')) == 40,
+                'original and published native commit SHAs mandatory')
     require(os.environ.get('PHASE3_CHAIN_RUN_ID') == os.environ.get('GITHUB_RUN_ID'),
             'not the exact root workflow run')
 
@@ -67,6 +75,14 @@ def main():
             if reason not in TRANSIENT or terminal_failed_ci(snapshot, task_id):
                 raise
             result = {'action': 'PENDING', 'reason': reason}
+        if mode == 'repair-ready':
+            if result.get('action') == 'REVIEW' and result.get('task') == task_id and result.get('post_repair'):
+                head = admit_after(snapshot, task_id, expected_pr,
+                                   os.environ['ORIGINAL_HEAD'],
+                                   os.environ['NATIVE_REPAIR_SHA'])
+                output(pr_number=expected_pr, head_sha=head, task_id=task_id)
+                print('PHASE3_REPAIRED_HEAD_REVIEW_READY', task_id, head)
+                return
         action = result.get('action')
         if mode == 'review-ready' and action == 'REVIEW':
             require(result.get('task') == task_id and
