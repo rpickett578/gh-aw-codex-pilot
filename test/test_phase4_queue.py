@@ -242,6 +242,18 @@ class QueueTests(unittest.TestCase):
         with self.assertRaises(q.QueueError):
             q.decide(BASE, snap)
 
+    def test_ref_qualified_github_workflow_paths_are_genuine(self):
+        snap = fake()
+        for detail in snap["evidence"].values():
+            detail["ci_runs"][0]["path"] = ".github/workflows/ci.yml@refs/pull/15/merge"
+        for run in snap["runs"].values():
+            run["path"] = ".github/workflows/phase3-chain.yml@main"
+        self.assertEqual(q.decide(BASE, snap)["action"], "QUEUE_EMPTY")
+        self.assertFalse(q.workflow_path_is(".github/workflows/ci.yml.backup@main",
+                                             ".github/workflows/ci.yml"))
+        self.assertFalse(q.workflow_path_is(".github/workflows/ci.yml@../wrong",
+                                             ".github/workflows/ci.yml"))
+
     def test_no_github_mutations_in_selector(self):
         source = (ROOT / "scripts/phase4_queue.py").read_text()
         self.assertNotIn("urllib.request.Request(url, data=", source)
