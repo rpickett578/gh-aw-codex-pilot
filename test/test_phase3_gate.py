@@ -119,6 +119,7 @@ class GateTests(unittest.TestCase):
           author_association='OWNER')]
         s['current_run_id']='200'
         s['chain_runs']=[chain_run(200)]
+        s['reviewed_resume_install']=True
         pr=s['pull_requests'][0]
         pr['number']=gate.FIRST_PR
         pr['head']['sha']=gate.FIRST_HEAD
@@ -171,6 +172,32 @@ class GateTests(unittest.TestCase):
         self.assertIn('    if: always()',acceptance)
         self.assertIn('PHASE3_FINAL_ROUTE_PASS',acceptance)
         self.assertIn('test "$ROUTE" = success',acceptance)
+
+    def test_unreviewed_install_cannot_reuse_original_authorization(self):
+        s=snapshot()
+        s['approval_comments']=[dict(body=gate.approval_text(gate.FIRST_INSTALL_SHA),
+          user=dict(login='rpickett578',id=313606620,type='User'),
+          author_association='OWNER')]
+        self.assertEqual(gate.decide(s)['reason'], 'FOUNDER_APPROVAL_MISSING')
+        s['reviewed_resume_install']=True
+        self.assertEqual(gate.decide(s)['issue'],11)
+
+    def test_cumulative_paid_stage_attempts_block_duplicate_and_unknown(self):
+        s=approve(snapshot())
+        s['current_run_id']='100'
+        s['chain_runs']=[chain_run(100),dict(chain_run(101,admitted=True),
+                                         paid_stages=['coder1','reviewer1'])]
+        with self.assertRaises(gate.Stop):
+            gate.decide(s)
+        s['chain_runs'][1]['paid_stages']=['unknown-agent']
+        with self.assertRaises(gate.Stop):
+            gate.decide(s)
+        s['chain_runs'][1]['paid_stages']=['reviewer1']
+        self.assertEqual(gate.decide(s)['issue'],11)
+        s['chain_runs'].append(dict(chain_run(102,admitted=True),
+                                    paid_stages=['reviewer1']))
+        with self.assertRaises(gate.Stop):
+            gate.decide(s)
 
     def test_untrusted_current_root_dispatch_fails(self):
         s=approve(snapshot())
