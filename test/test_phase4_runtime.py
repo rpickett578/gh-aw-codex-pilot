@@ -26,7 +26,7 @@ class RuntimeTests(unittest.TestCase):
             "repository": rt.REPO,
             "tasks": [{"id": "pilot-next-v1", "issue": 21,
                        "allowed_files": ["src/pilot-next-v1.mjs"],
-                       "max_ai_credits": 40}]}))
+                       "max_ai_credits": 60}]}))
         self.environ = patch.dict(os.environ, {
             "GITHUB_REPOSITORY": rt.REPO,
             "GITHUB_REF": "refs/heads/main",
@@ -50,7 +50,7 @@ class RuntimeTests(unittest.TestCase):
                                   "body": "Implement one inert source"}}}),
             patch.object(rt, "decide", return_value={
                 "action": "READY_CODING", "task": "pilot-next-v1",
-                "issue": 21, "index": 0, "max_ai_credits": 40,
+                "issue": 21, "index": 0, "max_ai_credits": 60,
                 "pr": None}),
             patch.object(rt, "sh", return_value=SHA),
         ]
