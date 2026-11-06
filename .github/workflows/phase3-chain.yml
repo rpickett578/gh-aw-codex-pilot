@@ -267,7 +267,7 @@ jobs:
         run: python3 scripts/phase3_route.py strip-ascii-controls-v1
   repair2:
     needs: route2
-    if: !cancelled() && needs.route2.result == 'success' && needs.route2.outputs.repair == 'true'
+    if: ${{ !cancelled() && needs.route2.result == 'success' && needs.route2.outputs.repair == 'true' }}
     uses: ./.github/workflows/phase3-repair-2.lock.yml
     with:
       pr_number: ${{ needs.route2.outputs.pr_number }}
@@ -413,7 +413,7 @@ jobs:
         run: python3 scripts/phase3_route.py collapse-ascii-spaces-v1
   repair3:
     needs: route3
-    if: !cancelled() && needs.route3.result == 'success' && needs.route3.outputs.repair == 'true'
+    if: ${{ !cancelled() && needs.route3.result == 'success' && needs.route3.outputs.repair == 'true' }}
     uses: ./.github/workflows/phase3-repair-3.lock.yml
     with:
       pr_number: ${{ needs.route3.outputs.pr_number }}
