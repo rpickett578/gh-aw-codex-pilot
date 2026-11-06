@@ -135,10 +135,10 @@ class GateTests(unittest.TestCase):
                 ', workflow_id: phase3-review, run: https://github.com/'+
                 gate.REPO+'/actions/runs/'+run+' -->')
         call='[gh-aw-workflow-call-id]: # "rpickett578%2Fgh-aw-codex-pilot%2Fphase3-review"'
-        e['reviews'][0]['body']='\x60\x60\x60phase3-review\\n'+json.dumps(payload)+'\\n\x60\x60\x60\\n'+marker+'\\n'+call
+        e['reviews'][0]['body']='\x60\x60\x60phase3-review\n'+json.dumps(payload)+'\n\x60\x60\x60\n'+marker+'\n'+call
         pr['body']=(
-            '<!-- gh-aw-workflow-id: '+workflow+' -->\\n'
-            '<!-- gh-aw-workflow-call-id: '+gate.REPO+'/'+workflow+' -->\\n'
+            '<!-- gh-aw-workflow-id: '+workflow+' -->\n'
+            '<!-- gh-aw-workflow-call-id: '+gate.REPO+'/'+workflow+' -->\n'
             '<!-- gh-aw-agentic-workflow: Phase3 Coder 1, id: '+run+
             ', workflow_id: '+workflow+', run: https://github.com/'+
             gate.REPO+'/actions/runs/'+run+' -->')
@@ -151,7 +151,7 @@ class GateTests(unittest.TestCase):
         workflow=(Path(__file__).resolve().parents[1] /
                   '.github/workflows/phase3-chain.yml').read_text()
         def job(name, next_name):
-            return workflow.split('  '+name+':\\n',1)[1].split('  '+next_name+':\\n',1)[0]
+            return workflow.split('  '+name+':\n',1)[1].split('  '+next_name+':\n',1)[0]
         admit=job('admit','coder1')
         self.assertIn('start_task: ${{ steps.dispatch.outputs.start_task }}',admit)
         self.assertIn('strip-ascii-controls-v1',admit)
@@ -167,7 +167,7 @@ class GateTests(unittest.TestCase):
                                     ('route3','repair3','reviewer3')]:
             self.assertIn("!cancelled() && needs."+dependency+".result == 'success'",
                           job(name,nxt))
-        acceptance=workflow.split('  acceptance:\\n',1)[1]
+        acceptance=workflow.split('  acceptance:\n',1)[1]
         self.assertIn('    if: always()',acceptance)
         self.assertIn('PHASE3_FINAL_ROUTE_PASS',acceptance)
         self.assertIn('test "$ROUTE" = success',acceptance)
