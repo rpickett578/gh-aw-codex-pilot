@@ -148,11 +148,23 @@ def decide(snapshot):
     if current is not None:
         runs = snapshot.get('chain_runs') or []
         check(len(runs) < 100, 'workflow run pagination exceeds limit')
-        related = [r for r in runs if r.get('head_sha') == sha]
-        check(len(related) == 1 and str(related[0].get('id')) == str(current)
-              and related[0].get('run_attempt') == 1
-              and related[0].get('event') == 'workflow_dispatch',
-              'run is missing, duplicated, or rerun')
+        matching = [r for r in runs if str(r.get('id')) == str(current)]
+        check(len(matching) == 1, 'current root workflow run missing or ambiguous')
+        own = matching[0]
+        check(own.get('head_sha') == sha and
+              own.get('head_branch') == 'main' and
+              own.get('event') == 'workflow_dispatch' and
+              own.get('run_attempt') == 1 and
+              (own.get('actor') or {}).get('login') == 'rpickett578' and
+              (own.get('actor') or {}).get('id') == FOUNDER_ID,
+              'root run has untrusted actor, ref, event or attempt')
+        # Rejected and failed admission jobs must NOT consume the single use.
+        # The snapshot independently checks the prior run's actual GitHub
+        # "admit" job conclusion before setting admission_passed.
+        consumed = [r for r in runs if str(r.get('id')) != str(current)
+                    and r.get('head_sha') == sha and
+                    r.get('admission_passed') is True]
+        check(not consumed, 'this installation already admitted a root run')
     refs = snapshot.get('branch_refs', {})
     for i, (issue_no, task_id, source) in enumerate(TASKS):
         issue = issues[i]
