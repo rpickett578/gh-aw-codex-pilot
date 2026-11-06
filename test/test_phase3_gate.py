@@ -129,7 +129,7 @@ class GateTests(unittest.TestCase):
     def test_root_workflow_has_non_skippable_admission(self):
         workflow=(Path(__file__).resolve().parents[1] /
                   '.github/workflows/phase3-chain.yml').read_text()
-        admission=workflow.split('  admit:\\n',1)[1].split('  coder1:\\n',1)[0]
+        admission=workflow.split('  admit:\n',1)[1].split('  coder1:\n',1)[0]
         self.assertNotIn('    if:',admission)
         self.assertIn('Deny an unauthorized dispatch visibly', admission)
         self.assertIn('test "$GITHUB_ACTOR" = rpickett578', admission)
