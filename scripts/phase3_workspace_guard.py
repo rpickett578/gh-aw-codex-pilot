@@ -8,6 +8,7 @@ import subprocess
 import sys
 
 ALLOWED = {
+    "review": None,
     "coder-1": "src/ascii-vowel-count.mjs",
     "coder-2": "src/strip-ascii-controls.mjs",
     "coder-3": "src/collapse-ascii-spaces.mjs",
