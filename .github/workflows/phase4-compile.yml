@@ -28,6 +28,18 @@ jobs:
           test -s .github/workflows/phase4-coder.lock.yml
           test -s .github/workflows/phase4-review.lock.yml
           sha256sum .github/workflows/phase4-coder.lock.yml .github/workflows/phase4-review.lock.yml
+          python3 - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          for name in ("phase4-coder", "phase4-review"):
+              path = Path(".github/workflows") / (name + ".lock.yml")
+              raw = path.read_bytes()
+              encoded = json.dumps(raw.decode("utf-8"), ensure_ascii=True)
+              chunks = [encoded[i:i+1024] for i in range(0,len(encoded),1024)]
+              print(f"PHASE4_LOCK_INFO:{name}:{hashlib.sha256(raw).hexdigest()}:{len(raw)}:{len(chunks)}")
+              for i,part in enumerate(chunks):
+                  print(f"PHASE4_LOCK_CHUNK:{name}:{i}:{len(chunks)}:{part}")
+          PY
           echo PHASE4_GENERIC_WORKER_COMPILE_ONLY_PASS
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
