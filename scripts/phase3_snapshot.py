@@ -75,11 +75,16 @@ def collect():
                                 key="workflow_runs"),
                 "reviews": bounded("/pulls/" + str(number) + "/reviews?per_page=100"),
             }
-    chain_runs = bounded("/actions/workflows/phase3-chain.yml/runs?event=workflow_dispatch&per_page=100",
-                         key="workflow_runs")
+    # The standalone preflight does not impersonate a paid chain run. When a
+    # reviewed chain is installed, its callers can opt in to one-run admission.
+    chain_run_id = os.environ.get("PHASE3_CHAIN_RUN_ID")
+    chain_runs = []
+    if chain_run_id:
+        chain_runs = bounded("/actions/workflows/phase3-chain.yml/runs?event=workflow_dispatch&per_page=100",
+                             key="workflow_runs")
     return dict(install_sha=sha, workflow_sha=sha,
         repository=REPO, ref="refs/heads/main", run_attempt=1,
-        current_run_id=os.environ.get("GITHUB_RUN_ID", ""),
+        current_run_id=chain_run_id,
         chain_runs=chain_runs,
         branch_refs=branch_refs, approval_comments=comments,
         issues=issues, pull_requests=prs, evidence=evidence)
