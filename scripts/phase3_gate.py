@@ -75,6 +75,18 @@ def decide(snapshot):
     check(len(issues) == 3, 'issue inventory differs')
     prs = snapshot.get('pull_requests') or []
     check(len(prs) < 100, 'PR inventory pagination exceeds limit')
+    # A dispatch is one-shot for a reviewed installation. A rerun or a second
+    # run claiming the same installed SHA is never treated as a new approval.
+    current = snapshot.get('current_run_id')
+    if current is not None:
+        runs = snapshot.get('chain_runs') or []
+        check(len(runs) < 100, 'workflow run pagination exceeds limit')
+        related = [r for r in runs if r.get('head_sha') == sha]
+        check(len(related) == 1 and str(related[0].get('id')) == str(current)
+              and related[0].get('run_attempt') == 1
+              and related[0].get('event') == 'workflow_dispatch',
+              'run is missing, duplicated, or rerun')
+    refs = snapshot.get('branch_refs', {})
     for i, (issue_no, task_id, source) in enumerate(TASKS):
         issue = issues[i]
         check(issue.get('number') == issue_no and issue.get('state') == 'open' and
@@ -85,11 +97,16 @@ def decide(snapshot):
         matches = [p for p in prs if (p.get('head') or {}).get('ref') == branch]
         check(len(matches) <= 1, 'duplicate task PR')
         if not matches:
+            # Native publication may create the remote branch before the PR.
+            # In that case stop; do not spawn a duplicate worker.
+            check(not refs.get(task_id), 'task branch exists without Draft PR')
             return {'action': 'CODING', 'task': task_id, 'issue': issue_no,
                     'source': source, 'branch': branch}
         p = matches[0]
         head = (p.get('head') or {}).get('sha', '')
         check(bool(re.fullmatch(r'[a-f0-9]{40}', head)), 'PR head SHA invalid')
+        if task_id in refs:
+            check(refs[task_id] == head, 'task branch ref and Draft PR head disagree')
         check(p.get('state') == 'open' and p.get('draft') is True and
               not p.get('merged_at') and
               (p.get('head') or {}).get('repo', {}).get('full_name') == REPO and
