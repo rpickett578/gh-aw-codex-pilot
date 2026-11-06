@@ -64,6 +64,27 @@ def approved(comments, sha, reviewed_resume=False):
     return True
 
 
+def verified_workflow_origin(snapshot, body, workflow, current_sha, current_run):
+    """Bind a persisted native publication to its actual admitted root run."""
+    check(isinstance(body, str), 'native workflow marker missing')
+    expr = (r'id: ([0-9]+), workflow_id: ' + re.escape(workflow) +
+            r', run: https://github\\.com/' + re.escape(REPO) +
+            r'/actions/runs/\\1')
+    origin_ids = re.findall(expr, body)
+    check(len(origin_ids) == 1, 'native workflow origin missing or ambiguous')
+    origin_id = int(origin_ids[0])
+    runs = snapshot.get('chain_runs') or []
+    found = [x for x in runs if str(x.get('id')) == str(origin_id)]
+    check(len(found) == 1, 'native publication does not match a known root run')
+    run = found[0]
+    check(origin_id == int(current_run) or run.get('admission_passed') is True,
+          'native publication came from an unadmitted earlier run')
+    install = run.get('head_sha')
+    check(install in (current_sha, FIRST_INSTALL_SHA),
+          'native publication belongs to a different installation')
+    return origin_id, install
+
+
 def require_ci(head, checks, runs):
     matched = [c for c in checks if c.get('name') == 'synthetic-tests']
     check(len(matched) == 1, 'required CI missing or duplicate')
@@ -232,25 +253,20 @@ def decide(snapshot):
         task_install = sha
         task_run = current
         if i == 0 and sha != FIRST_INSTALL_SHA and p.get('number') == FIRST_PR:
-            # Preserve the genuine completed Task 1 across an installer fix.
-            # Require its exact historic PR and reviewed commit, not a name match.
-            check(p.get('number') == FIRST_PR and head == FIRST_HEAD,
-                  'completed Task 1 receipt changed')
-            task_install = FIRST_INSTALL_SHA
-            task_run = FIRST_RUN_ID
+            check(head == FIRST_HEAD, 'completed Task 1 receipt changed')
         if current is not None:
-            # Actual Phase 2 gh-aw native PR publication is attributed to the
-            # founder-owned token, not github-actions[bot]. Verify the native
-            # workflow markers and exact root run; never infer native origin
-            # from the human user identity alone.
             body = p.get('body') or ''
             workflow = 'phase3-coder-' + str(i + 1)
             check(('<!-- gh-aw-workflow-id: ' + workflow + ' -->') in body and
-                  ('<!-- gh-aw-workflow-call-id: ' + REPO + '/' + workflow + ' -->') in body and
-                  ('id: ' + str(task_run) + ', workflow_id: ' + workflow +
-                   ', run: https://github.com/' + REPO + '/actions/runs/' +
-                   str(task_run)) in body,
-                  'native coding PR not from the exact authorized root run')
+                  ('<!-- gh-aw-workflow-call-id: ' + REPO + '/' + workflow + ' -->') in body,
+                  'native coding PR markers invalid')
+            task_run, task_install = verified_workflow_origin(
+                snapshot, body, workflow, sha, current)
+            if i == 0 and p.get('number') == FIRST_PR:
+                check(task_run == FIRST_RUN_ID and task_install == FIRST_INSTALL_SHA,
+                      'completed Task 1 came from wrong original run')
+            else:
+                check(task_install == sha, 'later task from unreviewed install')
         details = snapshot.get('evidence', {}).get(task_id) or {}
         files = details.get('files') or []
         check(len(files) == 1 and files[0].get('filename') == source and
@@ -267,7 +283,13 @@ def decide(snapshot):
             original_head = original.get('commit_id')
             check(bool(re.fullmatch(r'[a-f0-9]{40}', original_head)),
                   'invalid original reviewed head')
-            initial = parse_review(original, task_id, original_head, task_install, task_run)
+            if current is not None:
+                review_run, review_install = verified_workflow_origin(
+                    snapshot, original.get('body') or '', 'phase3-review', sha, current)
+            else:
+                review_run, review_install = task_run, task_install
+            initial = parse_review(original, task_id, original_head,
+                                   review_install, review_run)
             check(initial['verdict'] == 'findings',
                   'clean original review followed by unauthorized code change')
             require_repair_proof(details.get('repair_proof'), task_id, source,
@@ -283,7 +305,13 @@ def decide(snapshot):
                     'pr': p.get('number'), 'head': head,
                     'post_repair': bool(earlier)}
         current_review = current_reviews[0]
-        data = parse_review(current_review, task_id, head, task_install, task_run)
+        if current is not None:
+            review_run, review_install = verified_workflow_origin(
+                snapshot, current_review.get('body') or '', 'phase3-review', sha, current)
+        else:
+            review_run, review_install = task_run, task_install
+        data = parse_review(current_review, task_id, head,
+                            review_install, review_run)
         if data['verdict'] == 'findings':
             check(not earlier, 'second review found another defect; repair limit reached')
             check('repair' + str(i + 1) not in previous_stages,
