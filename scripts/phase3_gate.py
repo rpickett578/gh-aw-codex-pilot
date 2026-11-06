@@ -179,8 +179,22 @@ def decide(snapshot):
               (p.get('head') or {}).get('repo', {}).get('full_name') == REPO and
               (p.get('base') or {}).get('repo', {}).get('full_name') == REPO and
               (p.get('base') or {}).get('ref') == 'main' and
-              (p.get('user') or {}).get('login') == 'github-actions[bot]',
-              'task PR not native Draft in pilot')
+              (p.get('user') or {}).get('login') == 'rpickett578' and
+              (p.get('user') or {}).get('id') == FOUNDER_ID,
+              'task PR not published through the approved founder-owned native token')
+        if current is not None:
+            # Actual Phase 2 gh-aw native PR publication is attributed to the
+            # founder-owned token, not github-actions[bot]. Verify the native
+            # workflow markers and exact root run; never infer native origin
+            # from the human user identity alone.
+            body = p.get('body') or ''
+            workflow = 'phase3-coder-' + str(i + 1)
+            check(('<!-- gh-aw-workflow-id: ' + workflow + ' -->') in body and
+                  ('<!-- gh-aw-workflow-call-id: ' + REPO + '/' + workflow + ' -->') in body and
+                  ('id: ' + str(current) + ', workflow_id: ' + workflow +
+                   ', run: https://github.com/' + REPO + '/actions/runs/' +
+                   str(current)) in body,
+                  'native coding PR not from the exact authorized root run')
         details = snapshot.get('evidence', {}).get(task_id) or {}
         files = details.get('files') or []
         check(len(files) == 1 and files[0].get('filename') == source and
