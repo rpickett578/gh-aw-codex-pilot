@@ -198,6 +198,50 @@ class QueueTests(unittest.TestCase):
         with self.assertRaises(q.QueueError):
             q.decide(manifest, snap)
 
+    def test_extra_or_unauthorized_pr_file_never_passes(self):
+        manifest, snap = with_pending()
+        number, head = add_pr(manifest, snap)
+        snap["evidence"][str(number)]["files"].append(
+            {"filename": "test/unsafe.test.mjs", "status": "added"})
+        with self.assertRaises(q.QueueError):
+            q.decide(manifest, snap)
+
+    def test_fork_or_wrong_publisher_never_passes(self):
+        manifest, snap = with_pending()
+        add_pr(manifest, snap)
+        snap["pulls"][-1]["head"]["repo"]["full_name"] = "someone/foreign"
+        with self.assertRaises(q.QueueError):
+            q.decide(manifest, snap)
+        snap["pulls"][-1]["head"]["repo"]["full_name"] = q.REPO
+        snap["pulls"][-1]["user"]["id"] = 123
+        with self.assertRaises(q.QueueError):
+            q.decide(manifest, snap)
+
+    def test_untrusted_review_cannot_mark_completed(self):
+        snap = fake()
+        first = BASE["tasks"][0]["receipt"]["pr"]
+        snap["evidence"][str(first)]["reviews"][0]["user"]["id"] = 17
+        with self.assertRaises(q.QueueError):
+            q.decide(BASE, snap)
+        snap = fake()
+        snap["evidence"][str(first)]["reviews"][0]["body"] = (
+            snap["evidence"][str(first)]["reviews"][0]["body"]
+            .replace("workflow_id: phase3-review", "workflow_id: forged-review"))
+        with self.assertRaises(q.QueueError):
+            q.decide(BASE, snap)
+
+    def test_untrusted_ci_workflow_run_cannot_mark_completed(self):
+        snap = fake()
+        first = BASE["tasks"][0]["receipt"]["pr"]
+        snap["evidence"][str(first)]["ci_runs"][0]["path"] = (
+            ".github/workflows/forged-ci.yml")
+        with self.assertRaises(q.QueueError):
+            q.decide(BASE, snap)
+        snap = fake()
+        snap["evidence"][str(first)]["ci_runs"][0]["conclusion"] = "failure"
+        with self.assertRaises(q.QueueError):
+            q.decide(BASE, snap)
+
     def test_no_github_mutations_in_selector(self):
         source = (ROOT / "scripts/phase4_queue.py").read_text()
         self.assertNotIn("urllib.request.Request(url, data=", source)
