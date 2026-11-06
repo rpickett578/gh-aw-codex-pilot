@@ -75,6 +75,30 @@ class GateTests(unittest.TestCase):
     def test_duplicate_pr_stops(self):
         s=complete(approve(snapshot()),1);s['pull_requests']*=2
         with self.assertRaises(gate.Stop):gate.decide(s)
+    def test_orphan_branch_blocks_duplicate_coding(self):
+        s=approve(snapshot())
+        s['branch_refs']={gate.TASKS[0][1]: 'a'*40}
+        with self.assertRaises(gate.Stop):gate.decide(s)
+
+    def test_existing_pr_requires_matching_remote_ref(self):
+        s=complete(approve(snapshot()),1)
+        s['branch_refs']={gate.TASKS[0][1]: 'f'*40}
+        with self.assertRaises(gate.Stop):gate.decide(s)
+
+    def test_one_installed_run_only(self):
+        s=approve(snapshot())
+        s['current_run_id']='100'
+        s['chain_runs']=[dict(id=100,head_sha=SHA,run_attempt=1,event='workflow_dispatch')]
+        self.assertEqual(gate.decide(s)['issue'],11)
+        s['chain_runs'].append(dict(id=101,head_sha=SHA,run_attempt=1,event='workflow_dispatch'))
+        with self.assertRaises(gate.Stop):gate.decide(s)
+
+    def test_rerun_denied(self):
+        s=approve(snapshot())
+        s['current_run_id']='100'
+        s['chain_runs']=[dict(id=100,head_sha=SHA,run_attempt=2,event='workflow_dispatch')]
+        with self.assertRaises(gate.Stop):gate.decide(s)
+
     def test_review_findings_stop_for_explicit_repair_gate(self):
         s=complete(approve(snapshot()),1);r=s['evidence'][gate.TASKS[0][1]]['reviews'][0]
         r['body']=r['body'].replace('"verdict": "clean", "findings": []','"verdict": "findings", "findings": [{"input": "x"}]')
