@@ -100,10 +100,15 @@ def main():
             output(pr_number=expected_pr, head_sha=result['head'], task_id=task_id)
             print('PHASE3_REVIEW_READY ' + task_id + ' #' + expected_pr + ' ' + result['head'])
             return
-        if mode == 'next-ready' and action == 'CODING':
+        if mode == 'next-ready' and action in ('CODING', 'REVIEW', 'REPAIR'):
             require(result.get('task') == task_id, 'next task reordered')
-            output(task_id=task_id, issue=result['issue'])
-            print('PHASE3_NEXT_READY ' + task_id)
+            # The next task may already have a PR/review from an earlier run.
+            # Admission selected the next exact stage before this run began.
+            if action == 'CODING':
+                output(task_id=task_id, issue=result['issue'], action=action)
+            else:
+                output(task_id=task_id, action=action, pr=result['pr'])
+            print('PHASE3_NEXT_READY ' + task_id + ' ' + action)
             return
         if mode == 'complete' and action == 'STOP' and result.get('reason') == 'THREE_TASKS_COMPLETE':
             print('PHASE3_THREE_TASKS_COMPLETE')

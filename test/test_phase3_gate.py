@@ -104,8 +104,140 @@ class GateTests(unittest.TestCase):
         s['chain_runs'].append(chain_run(102, admitted=False))
         s['chain_runs'].append(chain_run(103, head_branch='other', admitted=False))
         self.assertEqual(gate.decide(s)['issue'],11)
-        # Only a real prior successful admission job consumes the one-shot.
+        # Prior successful admission is not a permanent approval reset.
+        # Existing task PRs and active-run checks still prevent duplicates.
         s['chain_runs'].append(chain_run(104, admitted=True))
+        self.assertEqual(gate.decide(s)['issue'],11)
+        s['chain_runs'][-1]['status']='in_progress'
+        with self.assertRaises(gate.Stop):
+            gate.decide(s)
+
+    def test_previous_approved_run_task_one_receipt_resumes_at_task_two(self):
+        s=complete(snapshot(),1)
+        s['approval_comments']=[dict(body=gate.approval_text(gate.FIRST_INSTALL_SHA),
+          user=dict(login='rpickett578',id=313606620,type='User'),
+          author_association='OWNER')]
+        s['current_run_id']='200'
+        original=chain_run(gate.FIRST_RUN_ID, admitted=True)
+        original['head_sha']=gate.FIRST_INSTALL_SHA
+        original['paid_stages']=['coder1', 'reviewer1']
+        s['chain_runs']=[chain_run(200),original]
+        s['reviewed_resume_install']=True
+        pr=s['pull_requests'][0]
+        pr['number']=gate.FIRST_PR
+        pr['head']['sha']=gate.FIRST_HEAD
+        task=gate.TASKS[0][1]
+        e=s['evidence'][task]
+        e['checks'][0]['head_sha']=gate.FIRST_HEAD
+        e['runs'][0]['head_sha']=gate.FIRST_HEAD
+        e['reviews'][0]['commit_id']=gate.FIRST_HEAD
+        payload=dict(install_sha=gate.FIRST_INSTALL_SHA,task=task,
+                     head=gate.FIRST_HEAD,verdict='clean',findings=[])
+        run=str(gate.FIRST_RUN_ID)
+        workflow='phase3-coder-1'
+        marker=('<!-- gh-aw-agentic-workflow: Phase3 Review, id: '+run+
+                ', workflow_id: phase3-review, run: https://github.com/'+
+                gate.REPO+'/actions/runs/'+run+' -->')
+        call='[gh-aw-workflow-call-id]: # "rpickett578%2Fgh-aw-codex-pilot%2Fphase3-review"'
+        e['reviews'][0]['body']='\x60\x60\x60phase3-review\n'+json.dumps(payload)+'\n\x60\x60\x60\n'+marker+'\n'+call
+        pr['body']=(
+            '<!-- gh-aw-workflow-id: '+workflow+' -->\n'
+            '<!-- gh-aw-workflow-call-id: '+gate.REPO+'/'+workflow+' -->\n'
+            '<!-- gh-aw-agentic-workflow: Phase3 Coder 1, id: '+run+
+            ', workflow_id: '+workflow+', run: https://github.com/'+
+            gate.REPO+'/actions/runs/'+run+' -->')
+        self.assertEqual(gate.decide(s)['issue'],12)
+        pr['head']['sha']='f'*40
+        with self.assertRaises(gate.Stop):
+            gate.decide(s)
+
+    def test_resume_handoff_and_acceptance_cannot_silently_skip(self):
+        workflow=(Path(__file__).resolve().parents[1] /
+                  '.github/workflows/phase3-chain.yml').read_text()
+        def job(name, next_name):
+            return workflow.split('  '+name+':\n',1)[1].split('  '+next_name+':\n',1)[0]
+        admit=job('admit','coder1')
+        self.assertIn('start_task: ${{ steps.dispatch.outputs.start_task }}',admit)
+        self.assertIn('strip-ascii-controls-v1',admit)
+        next2=job('next2','coder2')
+        self.assertIn("needs.admit.outputs.start_task == 'strip-ascii-controls-v1'",next2)
+        for name,nxt,dependency in [('coder2','review_ready2','next2'),
+                                    ('review_ready2','reviewer2','coder2'),
+                                    ('reviewer2','route2','review_ready2'),
+                                    ('route2','repair2','reviewer2'),
+                                    ('coder3','review_ready3','next3'),
+                                    ('review_ready3','reviewer3','coder3'),
+                                    ('reviewer3','route3','review_ready3'),
+                                    ('route3','repair3','reviewer3')]:
+            self.assertIn("needs."+dependency+".result == 'success'",
+                          job(name,nxt))
+            self.assertIn("!cancelled()",job(name,nxt))
+        acceptance=workflow.split('  acceptance:\n',1)[1]
+        self.assertIn('    if: always()',acceptance)
+        self.assertIn('PHASE3_FINAL_ROUTE_PASS',acceptance)
+        self.assertIn('test "$ROUTE" = success',acceptance)
+        self.assertIn('start_action: ${{ steps.dispatch.outputs.start_action }}',admit)
+        self.assertIn('start_post_repair: ${{ steps.dispatch.outputs.start_post_repair }}',admit)
+        for i in (1,2,3):
+            task=('ascii-vowel-count-v1','strip-ascii-controls-v1',
+                  'collapse-ascii-spaces-v1')[i-1]
+            src=job('repair'+str(i),'repair_ready'+str(i))
+            self.assertIn("needs.admit.outputs.start_action == 'REPAIR'",src)
+            self.assertIn("needs.admit.outputs.start_head",src)
+            review=job('second_review'+str(i),'next'+str(i+1)) if i<3 else job('second_review3','acceptance')
+            self.assertIn("needs.admit.outputs.start_post_repair == 'true'",review)
+        self.assertIn("needs.admit.outputs.start_task == 'collapse-ascii-spaces-v1'",
+                      job('next3','coder3'))
+
+    def test_unreviewed_install_cannot_reuse_original_authorization(self):
+        s=snapshot()
+        s['approval_comments']=[dict(body=gate.approval_text(gate.FIRST_INSTALL_SHA),
+          user=dict(login='rpickett578',id=313606620,type='User'),
+          author_association='OWNER')]
+        self.assertEqual(gate.decide(s)['reason'], 'FOUNDER_APPROVAL_MISSING')
+        s['reviewed_resume_install']=True
+        self.assertEqual(gate.decide(s)['issue'],11)
+
+    def test_historical_native_coder2_and_reviewer2_provenance(self):
+        s=complete(approve(snapshot()),2)
+        s['current_run_id']='200'
+        previous=chain_run(101,admitted=True)
+        previous['paid_stages']=['coder1','reviewer1','coder2','reviewer2']
+        s['chain_runs']=[chain_run(200),previous]
+        for index,task in enumerate(gate.TASKS[:2]):
+            number,t,source=task
+            pr=s['pull_requests'][index]
+            workflow='phase3-coder-'+str(index+1)
+            pr['body']=(
+                '<!-- gh-aw-workflow-id: '+workflow+' -->\\n'
+                '<!-- gh-aw-workflow-call-id: '+gate.REPO+'/'+workflow+' -->\\n'
+                '<!-- gh-aw-agentic-workflow: Phase3 Coder, id: 101, workflow_id: '+
+                workflow+', run: https://github.com/'+gate.REPO+
+                '/actions/runs/101 -->')
+            review=s['evidence'][t]['reviews'][0]
+            review['body']+='\\n<!-- gh-aw-agentic-workflow: Phase3 Review, id: 101, workflow_id: phase3-review, run: https://github.com/'+gate.REPO+'/actions/runs/101 -->'
+            review['body']+='\\n[gh-aw-workflow-call-id]: # "rpickett578%2Fgh-aw-codex-pilot%2Fphase3-review"'
+        result=gate.decide(s)
+        self.assertEqual(result['task'],gate.TASKS[2][1])
+        self.assertEqual(result['action'],'CODING')
+        s['chain_runs'][1]['admission_passed']=False
+        with self.assertRaises(gate.Stop):
+            gate.decide(s)
+
+    def test_cumulative_paid_stage_attempts_block_duplicate_and_unknown(self):
+        s=approve(snapshot())
+        s['current_run_id']='100'
+        s['chain_runs']=[chain_run(100),dict(chain_run(101,admitted=True),
+                                         paid_stages=['coder1','reviewer1'])]
+        with self.assertRaises(gate.Stop):
+            gate.decide(s)
+        s['chain_runs'][1]['paid_stages']=['unknown-agent']
+        with self.assertRaises(gate.Stop):
+            gate.decide(s)
+        s['chain_runs'][1]['paid_stages']=['reviewer1']
+        self.assertEqual(gate.decide(s)['issue'],11)
+        s['chain_runs'].append(dict(chain_run(102,admitted=True),
+                                    paid_stages=['reviewer1']))
         with self.assertRaises(gate.Stop):
             gate.decide(s)
 

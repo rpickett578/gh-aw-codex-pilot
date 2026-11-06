@@ -12,7 +12,7 @@ import re
 import subprocess
 import sys
 import tempfile
-from phase3_gate import TASKS, Stop, check, decide, parse_review
+from phase3_gate import TASKS, Stop, check, decide, parse_review, verified_workflow_origin
 from phase3_snapshot import api, collect
 
 CASES = {
@@ -104,8 +104,14 @@ def find_review(snapshot, task, head):
                and '```phase3-review' in (r.get('body') or '')]
     check(len(matches) == 1, 'exact original review is missing or ambiguous')
     review = matches[0]
-    data = parse_review(review, task, head, snapshot['install_sha'],
-                        snapshot.get('current_run_id'))
+    current = snapshot.get('current_run_id')
+    if current is not None:
+        review_run, review_install = verified_workflow_origin(
+            snapshot, review.get('body') or '', 'phase3-review',
+            snapshot['install_sha'], current)
+    else:
+        review_run, review_install = current, snapshot['install_sha']
+    data = parse_review(review, task, head, review_install, review_run)
     return review, data
 
 

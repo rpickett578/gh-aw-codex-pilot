@@ -10,6 +10,19 @@ import sys
 
 REPO = 'rpickett578/gh-aw-codex-pilot'
 FOUNDER_ID = 313606620
+# Immutable receipt for completed Task 1; not a new execution approval.
+FIRST_INSTALL_SHA = '5580a4a864f9b6c33433a91ab354d7d6c2a92a28'
+FIRST_RUN_ID = 42280771454
+FIRST_PR = 15
+FIRST_HEAD = 'b6732694a8621604fe9d0a2058d23ebfde897268'
+
+# Conservative configured maximum per paid agent stage, including its detector.
+STAGE_COSTS = {
+    **{'coder' + str(n): 33 for n in (1, 2, 3)},
+    **{'reviewer' + str(n): 20 for n in (1, 2, 3)},
+    **{'repair' + str(n): 23 for n in (1, 2, 3)},
+    **{'second_review' + str(n): 20 for n in (1, 2, 3)},
+}
 TASKS = (
     (11, 'ascii-vowel-count-v1', 'src/ascii-vowel-count.mjs'),
     (12, 'strip-ascii-controls-v1', 'src/strip-ascii-controls.mjs'),
@@ -32,8 +45,13 @@ def approval_text(sha):
             '\nMAX_REPAIRS_PER_TASK: 1\nMAX_TOTAL_AI_CREDITS: 300')
 
 
-def approved(comments, sha):
-    hits = [c for c in comments if (c.get('body') or '').strip() == approval_text(sha)]
+def approved(comments, sha, reviewed_resume=False):
+    # Reuse the original scoped approval ONLY for the exact reviewed PR16
+    # merge of the approved original install, verified by the read-only host.
+    allowed = {approval_text(sha)}
+    if reviewed_resume:
+        allowed.add(approval_text(FIRST_INSTALL_SHA))
+    hits = [c for c in comments if (c.get('body') or '').strip() in allowed]
     check(len(hits) <= 1, 'duplicate approval')
     if not hits:
         return False
@@ -44,6 +62,27 @@ def approved(comments, sha):
           c.get('author_association') in ('OWNER', 'COLLABORATOR', 'MEMBER') and
           not c.get('performed_via_github_app'), 'founder approval provenance invalid')
     return True
+
+
+def verified_workflow_origin(snapshot, body, workflow, current_sha, current_run):
+    """Bind a persisted native publication to its actual admitted root run."""
+    check(isinstance(body, str), 'native workflow marker missing')
+    expr = (r'id: ([0-9]+), workflow_id: ' + re.escape(workflow) +
+            r', run: https://github\.com/' + re.escape(REPO) +
+            r'/actions/runs/\1')
+    origin_ids = re.findall(expr, body)
+    check(len(origin_ids) == 1, 'native workflow origin missing or ambiguous')
+    origin_id = int(origin_ids[0])
+    runs = snapshot.get('chain_runs') or []
+    found = [x for x in runs if str(x.get('id')) == str(origin_id)]
+    check(len(found) == 1, 'native publication does not match a known root run')
+    run = found[0]
+    check(origin_id == int(current_run) or run.get('admission_passed') is True,
+          'native publication came from an unadmitted earlier run')
+    install = run.get('head_sha')
+    check(install in (current_sha, FIRST_INSTALL_SHA),
+          'native publication belongs to a different installation')
+    return origin_id, install
 
 
 def require_ci(head, checks, runs):
@@ -136,7 +175,8 @@ def decide(snapshot):
           snapshot.get('ref') == 'refs/heads/main' and
           snapshot.get('workflow_sha') == sha and
           snapshot.get('run_attempt') == 1, 'installation identity mismatch')
-    if not approved(snapshot.get('approval_comments', []), sha):
+    if not approved(snapshot.get('approval_comments', []), sha,
+                    snapshot.get('reviewed_resume_install') is True):
         return {'action': 'STOP', 'reason': 'FOUNDER_APPROVAL_MISSING'}
     issues = snapshot.get('issues') or []
     check(len(issues) == 3, 'issue inventory differs')
@@ -158,13 +198,27 @@ def decide(snapshot):
               (own.get('actor') or {}).get('login') == 'rpickett578' and
               (own.get('actor') or {}).get('id') == FOUNDER_ID,
               'root run has untrusted actor, ref, event or attempt')
-        # Rejected and failed admission jobs must NOT consume the single use.
-        # The snapshot independently checks the prior run's actual GitHub
-        # "admit" job conclusion before setting admission_passed.
-        consumed = [r for r in runs if str(r.get('id')) != str(current)
-                    and r.get('head_sha') == sha and
-                    r.get('admission_passed') is True]
-        check(not consumed, 'this installation already admitted a root run')
+        # Allow a bounded resume; refuse another simultaneously active chain.
+        # Already-produced task PRs prevent duplicate coding.
+        active = [r for r in runs if str(r.get('id')) != str(current)
+                  and r.get('head_sha') == sha and
+                  r.get('status') in ('queued', 'in_progress', 'waiting', 'pending')]
+        check(not active, 'another active root run exists')
+        previous_stages = []
+        for run in runs:
+            if str(run.get('id')) != str(current) and run.get('admission_passed') is True:
+                items = run.get('paid_stages') or []
+                check(isinstance(items, list), 'paid stage ledger malformed')
+                for stage in items:
+                    check(isinstance(stage, str) and stage in STAGE_COSTS,
+                          'unknown paid stage in earlier admitted run')
+                    previous_stages.append(stage)
+        check(len(set(previous_stages)) == len(previous_stages),
+              'paid stage was previously repeated across runs')
+        check(sum(STAGE_COSTS[name] for name in previous_stages) <= 300,
+              'cumulative configured stage budget exceeded')
+    else:
+        previous_stages = []
     refs = snapshot.get('branch_refs', {})
     for i, (issue_no, task_id, source) in enumerate(TASKS):
         issue = issues[i]
@@ -179,6 +233,8 @@ def decide(snapshot):
             # Native publication may create the remote branch before the PR.
             # In that case stop; do not spawn a duplicate worker.
             check(not refs.get(task_id), 'task branch exists without Draft PR')
+            check('coder' + str(i + 1) not in previous_stages,
+                  'coding attempt already spent on a previous root run')
             return {'action': 'CODING', 'task': task_id, 'issue': issue_no,
                     'source': source, 'branch': branch}
         p = matches[0]
@@ -194,19 +250,23 @@ def decide(snapshot):
               (p.get('user') or {}).get('login') == 'rpickett578' and
               (p.get('user') or {}).get('id') == FOUNDER_ID,
               'task PR not published through the approved founder-owned native token')
+        task_install = sha
+        task_run = current
+        if i == 0 and sha != FIRST_INSTALL_SHA and p.get('number') == FIRST_PR:
+            check(head == FIRST_HEAD, 'completed Task 1 receipt changed')
         if current is not None:
-            # Actual Phase 2 gh-aw native PR publication is attributed to the
-            # founder-owned token, not github-actions[bot]. Verify the native
-            # workflow markers and exact root run; never infer native origin
-            # from the human user identity alone.
             body = p.get('body') or ''
             workflow = 'phase3-coder-' + str(i + 1)
             check(('<!-- gh-aw-workflow-id: ' + workflow + ' -->') in body and
-                  ('<!-- gh-aw-workflow-call-id: ' + REPO + '/' + workflow + ' -->') in body and
-                  ('id: ' + str(current) + ', workflow_id: ' + workflow +
-                   ', run: https://github.com/' + REPO + '/actions/runs/' +
-                   str(current)) in body,
-                  'native coding PR not from the exact authorized root run')
+                  ('<!-- gh-aw-workflow-call-id: ' + REPO + '/' + workflow + ' -->') in body,
+                  'native coding PR markers invalid')
+            task_run, task_install = verified_workflow_origin(
+                snapshot, body, workflow, sha, current)
+            if i == 0 and p.get('number') == FIRST_PR:
+                check(task_run == FIRST_RUN_ID and task_install == FIRST_INSTALL_SHA,
+                      'completed Task 1 came from wrong original run')
+            else:
+                check(task_install == sha, 'later task from unreviewed install')
         details = snapshot.get('evidence', {}).get(task_id) or {}
         files = details.get('files') or []
         check(len(files) == 1 and files[0].get('filename') == source and
@@ -223,7 +283,13 @@ def decide(snapshot):
             original_head = original.get('commit_id')
             check(bool(re.fullmatch(r'[a-f0-9]{40}', original_head)),
                   'invalid original reviewed head')
-            initial = parse_review(original, task_id, original_head, sha, current)
+            if current is not None:
+                review_run, review_install = verified_workflow_origin(
+                    snapshot, original.get('body') or '', 'phase3-review', sha, current)
+            else:
+                review_run, review_install = task_run, task_install
+            initial = parse_review(original, task_id, original_head,
+                                   review_install, review_run)
             check(initial['verdict'] == 'findings',
                   'clean original review followed by unauthorized code change')
             require_repair_proof(details.get('repair_proof'), task_id, source,
@@ -232,13 +298,24 @@ def decide(snapshot):
             require_ci(original_head, orig_ci.get('checks') or [],
                        orig_ci.get('runs') or [])
         if not current_reviews:
+            review_stage = ('second_review' if earlier else 'reviewer') + str(i + 1)
+            check(review_stage not in previous_stages,
+                  'review attempt already spent on a previous root run')
             return {'action': 'REVIEW', 'task': task_id,
                     'pr': p.get('number'), 'head': head,
                     'post_repair': bool(earlier)}
         current_review = current_reviews[0]
-        data = parse_review(current_review, task_id, head, sha, current)
+        if current is not None:
+            review_run, review_install = verified_workflow_origin(
+                snapshot, current_review.get('body') or '', 'phase3-review', sha, current)
+        else:
+            review_run, review_install = task_run, task_install
+        data = parse_review(current_review, task_id, head,
+                            review_install, review_run)
         if data['verdict'] == 'findings':
             check(not earlier, 'second review found another defect; repair limit reached')
+            check('repair' + str(i + 1) not in previous_stages,
+                  'repair attempt already spent on a previous root run')
             return {'action': 'REPAIR', 'task': task_id,
                     'pr': p.get('number'), 'head': head,
                     'review_id': current_review.get('id')}
