@@ -11,7 +11,7 @@ import urllib.error
 import urllib.request
 from urllib.parse import quote
 
-from phase3_gate import TASKS, REPO, Stop, check, decide
+from phase3_gate import TASKS, REPO, FIRST_INSTALL_SHA, STAGE_COSTS, Stop, check, decide
 
 
 def api(path, optional=False):
@@ -40,6 +40,46 @@ def bounded(path, key=None):
     check(isinstance(result, list) and len(result) < 100,
           "GitHub collection exceeds one-page bound: " + path)
     return result
+
+
+def reviewed_resume_install(sha):
+    """Reuse original founder approval only for the reviewed PR #16 merge."""
+    if sha == FIRST_INSTALL_SHA:
+        return False
+    commit = api("/commits/" + sha)
+    pr = api("/pulls/16")
+    parents = [parent.get("sha") for parent in commit.get("parents", [])]
+    head = (pr.get("head") or {}).get("sha")
+    if (not pr.get("merged") or pr.get("state") != "closed" or
+            pr.get("merge_commit_sha") != sha or
+            (pr.get("head") or {}).get("repo", {}).get("full_name") != REPO or
+            parents != [FIRST_INSTALL_SHA, head] or
+            re.fullmatch("[0-9a-f]{40}", head or "") is None):
+        return False
+    comments = bounded("/issues/16/comments?per_page=100")
+    clean = False
+    for comment in comments:
+        if (comment.get("user") or {}).get("login") != "chatgpt-codex-connector[bot]":
+            continue
+        marker = re.search(r"<!-- codex-review-state:v1 (.*?) -->",
+                           comment.get("body") or "", re.S)
+        if not marker:
+            continue
+        try:
+            review = json.loads(marker.group(1)).get("code_review") or {}
+        except ValueError:
+            continue
+        if (review.get("commit_sha") == head and review.get("status") == "completed" and
+                review.get("has_any_findings") is False and
+                review.get("has_unresolved_findings") is False):
+            clean = True
+    checks = bounded("/commits/" + head + "/check-runs?per_page=100", key="check_runs")
+    for name in ("synthetic-tests", "scheduling_proof"):
+        matched = [x for x in checks if x.get("name") == name]
+        if not matched or any(x.get("status") != "completed" or
+                              x.get("conclusion") != "success" for x in matched):
+            return False
+    return clean
 
 
 def collect():
@@ -100,7 +140,7 @@ def collect():
                              key="workflow_runs")
         for run in chain_runs:
             if (str(run.get("id")) == str(chain_run_id) or
-                    run.get("head_sha") != sha or
+                    run.get("head_sha") not in (sha, FIRST_INSTALL_SHA) or
                     run.get("head_branch") != "main" or
                     run.get("run_attempt") != 1 or
                     run.get("event") != "workflow_dispatch" or
@@ -118,7 +158,17 @@ def collect():
                 and admission[0].get("conclusion") == "success"
                 and admission[0].get("run_attempt") == 1
             )
+            if run["admission_passed"]:
+                started = set()
+                for job in jobs:
+                    name = job.get("name") or ""
+                    if name.endswith(" / agent") and job.get("conclusion") != "skipped":
+                        stage = name[:-len(" / agent")]
+                        check(stage in STAGE_COSTS, "unknown paid worker job")
+                        started.add(stage)
+                run["paid_stages"] = sorted(started)
     return dict(install_sha=sha, workflow_sha=sha,
+        reviewed_resume_install=reviewed_resume_install(sha),
         repository=REPO, ref="refs/heads/main", run_attempt=1,
         current_run_id=chain_run_id,
         chain_runs=chain_runs,
