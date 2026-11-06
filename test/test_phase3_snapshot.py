@@ -21,7 +21,9 @@ def fixtures():
                              "has_any_findings": False, "has_unresolved_findings": False}}
     comments = [{"user": {"login": "chatgpt-codex-connector[bot]"},
                  "body": "<!-- codex-review-state:v1 " + json.dumps(state) + " -->"}]
-    checks = [{"name": name, "status": "completed", "conclusion": "success"}
+    checks = [{"name": name, "head_sha": PR_HEAD,
+               "app": {"slug": "github-actions"},
+               "status": "completed", "conclusion": "success"}
               for name in ("synthetic-tests", "scheduling_proof")]
     return commit, pr, comments, checks
 
@@ -39,6 +41,10 @@ def inspect(commit, pr, comments, checks, sha=NEW_SHA):
             return comments
         if path == "/commits/" + PR_HEAD + "/check-runs?per_page=100":
             return checks
+        if path == "/actions/workflows/ci.yml/runs?event=pull_request&head_sha=" + PR_HEAD + "&per_page=100":
+            return [{"head_sha": PR_HEAD, "path": ".github/workflows/ci.yml",
+                     "event": "pull_request", "run_attempt": 1,
+                     "status": "completed", "conclusion": "success"}]
         raise AssertionError("unexpected collection: " + path)
 
     with patch.object(snapshot, "api", side_effect=fake_api), \
@@ -70,6 +76,16 @@ class ReviewedResumeTests(unittest.TestCase):
     def test_failed_exact_head_ci_rejected(self):
         commit, pr, comments, checks = fixtures()
         checks[0]["conclusion"] = "failure"
+        self.assertFalse(inspect(commit, pr, comments, checks))
+
+    def test_foreign_ci_check_app_rejected(self):
+        commit, pr, comments, checks = fixtures()
+        checks[0]['app']['slug'] = "third-party"
+        self.assertFalse(inspect(commit, pr, comments, checks))
+
+    def test_foreign_check_sha_rejected(self):
+        commit, pr, comments, checks = fixtures()
+        checks[0]['head_sha'] = "f" * 40
         self.assertFalse(inspect(commit, pr, comments, checks))
 
 
