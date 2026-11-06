@@ -1,0 +1,209 @@
+name: Phase 3 bounded three-task synthetic Codex chain
+run-name: phase3-three-task-one-shot
+on:
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: phase3-one-active-root-run
+  cancel-in-progress: false
+env:
+  PHASE3_INSTALL_SHA: ${{ vars.PHASE3_INSTALL_SHA }}
+  PHASE3_CHAIN_RUN_ID: ${{ github.run_id }}
+  GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
+jobs:
+  admit:
+    if: github.repository == 'rpickett578/gh-aw-codex-pilot' && github.ref == 'refs/heads/main' && github.actor == 'rpickett578' && github.run_attempt == 1 && vars.PHASE3_INSTALL_SHA == github.workflow_sha
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      checks: read
+      actions: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Require exact founder approval and one unconsumed root run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 scripts/phase3_snapshot.py > "$RUNNER_TEMP/phase3-first.json"
+          python3 -c 'import json,os; x=json.load(open(os.environ["RUNNER_TEMP"]+"/phase3-first.json")); assert x["action"]=="CODING" and x["task"]=="ascii-vowel-count-v1" and x["issue"]==11, "first task not admitted"'
+  coder1:
+    needs: admit
+    uses: ./.github/workflows/phase3-coder-1.lock.yml
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+      checks: read
+    secrets: inherit
+  review_ready1:
+    needs: coder1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
+    outputs:
+      pr_number: ${{ steps.gate.outputs.pr_number }}
+      head_sha: ${{ steps.gate.outputs.head_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - id: gate
+        name: Wait only for real required CI at the exact native Draft PR head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_PR: ${{ needs.coder1.outputs.created_pr_number }}
+          EXPECTED_URL: ${{ needs.coder1.outputs.created_pr_url }}
+        run: python3 scripts/phase3_wait.py review-ready ascii-vowel-count-v1
+  reviewer1:
+    needs: review_ready1
+    uses: ./.github/workflows/phase3-review.lock.yml
+    with:
+      pr_number: ${{ needs.review_ready1.outputs.pr_number }}
+      head_sha: ${{ needs.review_ready1.outputs.head_sha }}
+      task_id: ascii-vowel-count-v1
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+      checks: read
+    secrets: inherit
+  next2:
+    needs: reviewer1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Require independent clean review and the next approved task
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/phase3_wait.py next-ready strip-ascii-controls-v1
+  coder2:
+    needs: next2
+    uses: ./.github/workflows/phase3-coder-2.lock.yml
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+      checks: read
+    secrets: inherit
+  review_ready2:
+    needs: coder2
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
+    outputs:
+      pr_number: ${{ steps.gate.outputs.pr_number }}
+      head_sha: ${{ steps.gate.outputs.head_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - id: gate
+        name: Wait only for real required CI at exact second Draft PR head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_PR: ${{ needs.coder2.outputs.created_pr_number }}
+          EXPECTED_URL: ${{ needs.coder2.outputs.created_pr_url }}
+        run: python3 scripts/phase3_wait.py review-ready strip-ascii-controls-v1
+  reviewer2:
+    needs: review_ready2
+    uses: ./.github/workflows/phase3-review.lock.yml
+    with:
+      pr_number: ${{ needs.review_ready2.outputs.pr_number }}
+      head_sha: ${{ needs.review_ready2.outputs.head_sha }}
+      task_id: strip-ascii-controls-v1
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+      checks: read
+    secrets: inherit
+  next3:
+    needs: reviewer2
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Require second clean review and final approved task
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/phase3_wait.py next-ready collapse-ascii-spaces-v1
+  coder3:
+    needs: next3
+    uses: ./.github/workflows/phase3-coder-3.lock.yml
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+      checks: read
+    secrets: inherit
+  review_ready3:
+    needs: coder3
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
+    outputs:
+      pr_number: ${{ steps.gate.outputs.pr_number }}
+      head_sha: ${{ steps.gate.outputs.head_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - id: gate
+        name: Wait only for real required CI at exact third Draft PR head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_PR: ${{ needs.coder3.outputs.created_pr_number }}
+          EXPECTED_URL: ${{ needs.coder3.outputs.created_pr_url }}
+        run: python3 scripts/phase3_wait.py review-ready collapse-ascii-spaces-v1
+  reviewer3:
+    needs: review_ready3
+    uses: ./.github/workflows/phase3-review.lock.yml
+    with:
+      pr_number: ${{ needs.review_ready3.outputs.pr_number }}
+      head_sha: ${{ needs.review_ready3.outputs.head_sha }}
+      task_id: collapse-ascii-spaces-v1
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: read
+      checks: read
+    secrets: inherit
+  acceptance:
+    needs: reviewer3
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Require three Draft PRs, three actual CI successes and three clean independent COMMENT reviews
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/phase3_wait.py complete collapse-ascii-spaces-v1
