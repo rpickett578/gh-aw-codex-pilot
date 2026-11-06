@@ -131,7 +131,13 @@ with exactly one JSON evidence block:
 ```phase4-review
 {"task":"EXACT_TASK_ID","head":"EXACT_HEAD_SHA","verdict":"clean","findings":[]}
 ```
-Replace task/head with the exact values in the trusted context JSON. For real
-defects, use verdict "findings" and a concise, bounded findings array.
+Replace task/head with the exact values in the trusted context JSON.
+For real defects, use verdict "findings" and at most THREE findings. Each must
+contain exactly keys "input", "expected", "line", "reason": input is compact
+JSON (no code), expected is {"value": <JSON result>} or {"error":"TypeError"},
+line is an integer in range 1..200, reason is 1..500 characters describing a
+reproducible correctness defect. Do not invent inputs, insert extra fields,
+or use prose instead of the required structured block. A clean result must
+have an empty findings list.
 No code writes, no APPROVE/REQUEST_CHANGES, no second review agent. Stop after
 native COMMENT publication.
