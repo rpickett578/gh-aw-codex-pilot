@@ -58,6 +58,22 @@ def required_tests(tap_text, expected):
             "actual fixture case count or outcome differs from approved manifest")
 
 
+def sandbox_command(source_path, fixture_path):
+    """Execute the reviewed fixture directly under Node's enforce permission model.
+
+    No child processes, worker threads, filesystem writes or unrelated file
+    reads are granted. Direct node:test execution avoids the --test runner's
+    own subprocess, while retaining its trusted TAP summary.
+    """
+    source = str(Path(source_path).resolve(strict=True))
+    fixture = str(Path(fixture_path).resolve(strict=True))
+    require(source != fixture and
+            Path(source).is_file() and Path(fixture).is_file(),
+            "source/fixture missing or identical")
+    return ["node", "--permission", "--allow-fs-read=" + fixture,
+            "--allow-fs-read=" + source, fixture]
+
+
 def verify():
     repo = os.environ.get("REPOSITORY")
     head_repo = os.environ.get("HEAD_REPOSITORY")
@@ -96,9 +112,11 @@ def verify():
     require(type(expected) is int and 1 <= expected <= 200,
             "invalid expected fixture case count")
     # The native PR is already scope-checked; no agent input can alter this path.
-    process = subprocess.run(["node", "--test", "--test-reporter=tap", fixture],
+    process = subprocess.run(sandbox_command(source_path, fixture),
                              text=True, stdout=subprocess.PIPE,
-                             stderr=subprocess.STDOUT, timeout=50)
+                             stderr=subprocess.STDOUT, timeout=50,
+                             env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+                                  "CI": "true"})
     print(process.stdout, end="")
     require(process.returncode == 0, "immutable task runner exited unsuccessfully")
     required_tests(process.stdout, expected)
