@@ -56,6 +56,29 @@ class SourceCITests(unittest.TestCase):
         with self.assertRaises(QueueError):
             c.approved_task(manifest, "codex/phase4-count-ascii-digits-v1")
 
+    def test_fixture_expected_count_is_reviewed_metadata(self):
+        import json
+        metadata = json.loads((ROOT / "test/count-ascii-digits-v1.test-meta.json").read_text())
+        self.assertEqual(metadata, {"expected_tests": 20})
+
+    def test_runner_requires_exact_20_real_cases(self):
+        def tap(tests, passed=None):
+            return ("TAP version 13\\n" +
+                    "\\n".join(["# tests " + str(tests),
+                                "# pass " + str(tests if passed is None else passed),
+                                "# fail 0", "# cancelled 0",
+                                "# skipped 0", "# todo 0"]) + "\\n")
+        c.required_tests(tap(20), 20)
+        with self.assertRaises(QueueError):
+            c.required_tests(tap(1), 20)  # process.exit(0) ran no real fixture assertions
+        with self.assertRaises(QueueError):
+            c.required_tests(tap(20, 19), 20)
+        with self.assertRaises(QueueError):
+            c.required_tests(tap(20), True)
+        # Printing a fake earlier TAP summary cannot override the final runner count.
+        with self.assertRaises(QueueError):
+            c.required_tests(tap(20) + tap(1), 20)
+
     def test_identity_guard_blocks_other_repository(self):
         with patch.dict(c.os.environ, {
             "REPOSITORY": "somewhere/else",
