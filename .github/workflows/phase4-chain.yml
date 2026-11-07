@@ -1,5 +1,5 @@
 name: Phase 4 continuous synthetic worker chain
-run-name: phase4-one-synthetic-task-only
+run-name: phase4-pilot-completed-preview-only
 on:
   workflow_dispatch:
   schedule:
@@ -44,7 +44,7 @@ jobs:
   reserve:
     needs: preview
     # ONE approved synthetic task only; at most one coder and one reviewer.
-    if: ${{ needs.preview.outputs.task == 'count-ascii-digits-v1' && (needs.preview.outputs.action == 'READY_CODING' || needs.preview.outputs.action == 'READY_REVIEW') }}
+    if: ${{ false && needs.preview.outputs.task == 'count-ascii-digits-v1' && (needs.preview.outputs.action == 'READY_CODING' || needs.preview.outputs.action == 'READY_REVIEW') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 6
     permissions: {contents: write, issues: read, pull-requests: read, checks: read, actions: read}
@@ -83,7 +83,7 @@ jobs:
   coder:
     needs: reserve
     # Exact task and durable reserve evidence are required before paid work.
-    if: ${{ needs.reserve.outputs.task == 'count-ascii-digits-v1' && needs.reserve.outputs.action == 'READY_CODING' }}
+    if: ${{ false && needs.reserve.outputs.task == 'count-ascii-digits-v1' && needs.reserve.outputs.action == 'READY_CODING' }}
     uses: ./.github/workflows/phase4-coder.lock.yml
     with:
       task_id: ${{ needs.reserve.outputs.task }}
@@ -93,7 +93,7 @@ jobs:
     secrets: inherit
   reviewer:
     needs: reserve
-    if: ${{ needs.reserve.outputs.task == 'count-ascii-digits-v1' && needs.reserve.outputs.action == 'READY_REVIEW' }}
+    if: ${{ false && needs.reserve.outputs.task == 'count-ascii-digits-v1' && needs.reserve.outputs.action == 'READY_REVIEW' }}
     uses: ./.github/workflows/phase4-review.lock.yml
     with:
       task_id: ${{ needs.reserve.outputs.task }}
