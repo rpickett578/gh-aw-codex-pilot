@@ -1,5 +1,17 @@
 {
-  "version": 1,
+  "claims": [
+    {
+      "cost": 33,
+      "head": "",
+      "install_sha": "5f5b5d748491d387a218e8f6c60e1db0b7b00eca",
+      "issue": 23,
+      "pr": null,
+      "run_id": 42370865236,
+      "source": "src/count-ascii-digits-v1.mjs",
+      "stage": "READY_CODING",
+      "task": "count-ascii-digits-v1"
+    }
+  ],
   "repository": "rpickett578/gh-aw-codex-pilot",
-  "claims": []
+  "version": 1
 }
