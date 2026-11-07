@@ -81,27 +81,48 @@ class SourceCITests(unittest.TestCase):
         with self.assertRaises(QueueError):
             c.required_tests(tap(20) + tap(1), 20)
 
-    def test_node_permission_sandbox_denies_process_spawns(self):
-        with tempfile.TemporaryDirectory(prefix="phase4-ci-sandbox-") as temp:
-            src = Path(temp) / "source.mjs"
-            fixture = Path(temp) / "fixture.test.mjs"
-            src.write_text("import { spawnSync } from 'node:child_process';" +
-                           "spawnSync('true', []); export const value=1;")
-            fixture.write_text("import test from 'node:test';" +
-                               "import assert from 'node:assert/strict';" +
-                               "import { value } from './source.mjs';" +
-                               "test('one',()=>assert.equal(value,1));")
-            command = c.sandbox_command(src, fixture)
+    def test_vm_isolation_blocks_forged_tap_and_process_exit(self):
+        with tempfile.TemporaryDirectory(prefix="phase4-ci-vm-") as temp:
+            directory = Path(temp)
+            (directory / "src").mkdir()
+            (directory / "test").mkdir()
+            src = directory / "src" / "source.mjs"
+            fixture = directory / "test" / "fixture.test.mjs"
+            helper = directory / "test" / "phase4-sandbox.mjs"
+            helper.write_bytes((ROOT / "test/phase4-sandbox.mjs").read_bytes())
+            fixture.write_text(
+                "import test from 'node:test';"
+                "import assert from 'node:assert/strict';"
+                "import {loadApprovedSource} from './phase4-sandbox.mjs';"
+                "const {value}=await loadApprovedSource('../src/source.mjs');"
+                "test('one',()=>assert.equal(value(),1));")
+            src.write_text(
+                "process.on('exit',()=>console.log('# tests 20'));"
+                "process.exit(0); export function value(){return 1}")
+            command = c.sandbox_command(src, fixture, helper)
             self.assertIn("--permission", command)
+            self.assertIn("--experimental-vm-modules", command)
             self.assertNotIn("--allow-child-process", command)
             self.assertNotIn("--allow-worker", command)
             self.assertTrue(all(not x.startswith("--allow-fs-write") for x in command))
             self.assertEqual([x for x in command if x.startswith("--allow-fs-read=")],
                              ["--allow-fs-read=" + str(fixture),
-                              "--allow-fs-read=" + str(src)])
-            result = subprocess.run(command, capture_output=True, text=True, timeout=10)
-            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("ERR_ACCESS_DENIED", result.stdout + result.stderr)
+                              "--allow-fs-read=" + str(src),
+                              "--allow-fs-read=" + str(helper)])
+            denied = subprocess.run(command, capture_output=True, text=True, timeout=10)
+            self.assertNotEqual(denied.returncode, 0, denied.stdout + denied.stderr)
+            self.assertIn("process is not defined", denied.stdout + denied.stderr)
+            self.assertNotIn("# tests 20", denied.stdout)
+            src.write_text("export function value(){return 1}")
+            accepted = subprocess.run(command, capture_output=True, text=True, timeout=10)
+            self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+            c.required_tests(accepted.stdout, 1)
+            src.write_text("import { spawnSync } from 'node:child_process';"
+                           "spawnSync('true',[]);export function value(){return 1}")
+            denied_import = subprocess.run(command, capture_output=True, text=True, timeout=10)
+            self.assertNotEqual(denied_import.returncode, 0)
+            self.assertIn("Worker source imports are forbidden",
+                          denied_import.stdout + denied_import.stderr)
 
     def test_identity_guard_blocks_other_repository(self):
         with patch.dict(c.os.environ, {
