@@ -320,7 +320,8 @@ jobs:
           allowed = {'scripts/phase4_source_ci.py', 'test/test_phase4_source_ci.py',
                      'scripts/phase4_queue.py', 'test/test_phase4_queue.py',
                      'test/count-ascii-digits-v1.test.mjs',
-                     'test/count-ascii-digits-v1.test-meta.json', '.github/workflows/ci.yml'}
+                     'test/count-ascii-digits-v1.test-meta.json',
+                     'test/phase4-sandbox.mjs', '.github/workflows/ci.yml'}
           names = set(subprocess.check_output(['git','diff','--name-only',
                           os.environ['BASE_SHA'] + '...' + os.environ['HEAD_SHA']],
                           text=True).splitlines())
