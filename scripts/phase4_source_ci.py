@@ -58,20 +58,23 @@ def required_tests(tap_text, expected):
             "actual fixture case count or outcome differs from approved manifest")
 
 
-def sandbox_command(source_path, fixture_path):
-    """Execute the reviewed fixture directly under Node's enforce permission model.
+def sandbox_command(source_path, fixture_path,
+                    helper_path="test/phase4-sandbox.mjs"):
+    """Trusted fixture imports worker code only into an isolated VM realm.
 
-    No child processes, worker threads, filesystem writes or unrelated file
-    reads are granted. Direct node:test execution avoids the --test runner's
-    own subprocess, while retaining its trusted TAP summary.
+    Node is additionally restricted: no child processes, workers, unrelated
+    filesystem reads or writes. The untrusted source cannot see process,
+    stdout, host imports or the Node test reporter from its own VM context.
     """
     source = str(Path(source_path).resolve(strict=True))
     fixture = str(Path(fixture_path).resolve(strict=True))
-    require(source != fixture and
-            Path(source).is_file() and Path(fixture).is_file(),
-            "source/fixture missing or identical")
-    return ["node", "--permission", "--allow-fs-read=" + fixture,
-            "--allow-fs-read=" + source, fixture]
+    helper = str(Path(helper_path).resolve(strict=True))
+    require(len({source, fixture, helper}) == 3 and
+            all(Path(x).is_file() for x in (source, fixture, helper)),
+            "missing or overlapping sandbox files")
+    return ["node", "--experimental-vm-modules", "--permission",
+            "--allow-fs-read=" + fixture, "--allow-fs-read=" + source,
+            "--allow-fs-read=" + helper, fixture]
 
 
 def verify():
@@ -100,6 +103,15 @@ def verify():
     require(0 < len(fixture_bytes) <= 32768, "immutable task test missing or oversized")
     require(Path(fixture).read_bytes() == fixture_bytes,
             "worker checkout changed immutable tests")
+    require(b"from './phase4-sandbox.mjs'" in fixture_bytes and
+            b"loadApprovedSource(" in fixture_bytes,
+            "immutable fixture must use trusted module isolation")
+    helper_path = "test/phase4-sandbox.mjs"
+    helper_bytes = subprocess.check_output(
+        ["git", "show", base + ":" + helper_path])
+    require(0 < len(helper_bytes) <= 8192 and
+            Path(helper_path).read_bytes() == helper_bytes,
+            "trusted source isolation helper missing or altered")
     meta_path = fixture.removesuffix(".test.mjs") + ".test-meta.json"
     meta_bytes = subprocess.check_output(["git", "show", base + ":" + meta_path])
     require(0 < len(meta_bytes) <= 2048, "missing fixture metadata")
@@ -112,7 +124,7 @@ def verify():
     require(type(expected) is int and 1 <= expected <= 200,
             "invalid expected fixture case count")
     # The native PR is already scope-checked; no agent input can alter this path.
-    process = subprocess.run(sandbox_command(source_path, fixture),
+    process = subprocess.run(sandbox_command(source_path, fixture, helper_path),
                              text=True, stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT, timeout=50,
                              env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
