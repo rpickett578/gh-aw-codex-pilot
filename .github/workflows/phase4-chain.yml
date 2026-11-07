@@ -42,7 +42,7 @@ jobs:
   reserve:
     needs: preview
     # Disabled until the single bounded paid-worker pilot is separately authorized.
-    if: ${{ false }}
+    if: ${{ false && (needs.preview.outputs.action == 'READY_CODING' || needs.preview.outputs.action == 'READY_REVIEW') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 6
     permissions: {contents: write, issues: read, pull-requests: read, checks: read, actions: read}
@@ -81,7 +81,7 @@ jobs:
   coder:
     needs: reserve
     # Never launch a paid agent until an explicit activation change is reviewed.
-    if: ${{ false }}
+    if: ${{ false && needs.reserve.outputs.action == 'READY_CODING' }}
     uses: ./.github/workflows/phase4-coder.lock.yml
     with:
       task_id: ${{ needs.reserve.outputs.task }}
@@ -91,7 +91,7 @@ jobs:
     secrets: inherit
   reviewer:
     needs: reserve
-    if: ${{ false }}
+    if: ${{ false && needs.reserve.outputs.action == 'READY_REVIEW' }}
     uses: ./.github/workflows/phase4-review.lock.yml
     with:
       task_id: ${{ needs.reserve.outputs.task }}
