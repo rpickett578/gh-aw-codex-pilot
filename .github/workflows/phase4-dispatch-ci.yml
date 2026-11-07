@@ -27,5 +27,8 @@ jobs:
           python3 -m unittest discover -s test -p 'test_phase4_queue.py' -v
           python3 -m py_compile scripts/phase4_dispatch.py
           test -s .github/workflows/phase4-dispatch-preview.yml
-          ! grep -Eq '^[[:space:]]+uses:[[:space:]]+\./\.github/workflows/phase4-(coder|review)\.lock\.yml' .github/workflows/phase4-dispatch-preview.yml
+          if grep -Eq '^[[:space:]]+uses:[[:space:]]+\./\.github/workflows/phase4-(coder|review)\.lock\.yml' .github/workflows/phase4-dispatch-preview.yml; then
+            echo 'Read-only preview must not invoke paid workers' >&2
+            exit 1
+          fi
           echo PHASE4_DISPATCH_LEDGER_OFFLINE_PASS
