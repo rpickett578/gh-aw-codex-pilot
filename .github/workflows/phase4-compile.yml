@@ -1,0 +1,52 @@
+name: Phase 4 generic worker compile-only verification
+on:
+  pull_request:
+    branches: [main, codex/phase4-persistent-queue-foundation]
+    types: [opened, synchronize, reopened, ready_for_review]
+permissions: {}
+jobs:
+  compile:
+    if: ${{ github.repository == 'rpickett578/gh-aw-codex-pilot' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'codex/phase4-generic-worker-runtime' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Test reviewed queue admission and exact source-only guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s test -p 'test_phase4_runtime.py' -v
+          python3 -m unittest discover -s test -p 'test_phase4_queue.py' -v
+          python3 -m py_compile scripts/phase4_runtime.py
+      - name: Compile generic Codex agents without running or paying for them
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh extension install github/gh-aw --pin v1.0.1
+          gh aw compile phase4-coder --strict
+          gh aw compile phase4-review --strict
+          test -s .github/workflows/phase4-coder.lock.yml
+          test -s .github/workflows/phase4-review.lock.yml
+          sha256sum .github/workflows/phase4-coder.lock.yml .github/workflows/phase4-review.lock.yml
+          # The files GitHub executes must be byte-identical to the reviewed sources.
+          if ! git diff --exit-code -- .github/workflows/phase4-coder.lock.yml .github/workflows/phase4-review.lock.yml; then
+            echo "Compiled gh-aw locks are stale; regenerate and commit before merging." >&2
+            exit 1
+          fi
+          echo PHASE4_COMMITTED_LOCK_MATCH_PASS
+          echo PHASE4_GENERIC_WORKER_COMPILE_ONLY_PASS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: phase4-generic-compiled-locks-review-only
+          path: |
+            .github/workflows/phase4-coder.lock.yml
+            .github/workflows/phase4-review.lock.yml
+          if-no-files-found: error
+          retention-days: 7
