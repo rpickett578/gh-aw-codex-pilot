@@ -139,6 +139,13 @@ class QueueTests(unittest.TestCase):
               "expected": {"value": "good"}, "line": 1,
               "reason": "wrong output"}]}), json.dumps(payload)))
         self.assertEqual(q.decide(manifest, snap)["action"], "QUEUE_EMPTY")
+        # A scheduled root carries the same native review provenance as manual.
+        snap["runs"][run_id]["event"] = "schedule"
+        self.assertEqual(q.decide(manifest, snap)["action"], "QUEUE_EMPTY")
+        snap["runs"][run_id]["event"] = "push"
+        with self.assertRaises(q.QueueError):
+            q.decide(manifest, snap)
+        snap["runs"][run_id]["event"] = "workflow_dispatch"
         # Persist a completion receipt without converting genuine phase4 origin
         # markers to phase3; future queue entries must continue to progress.
         manifest["tasks"][-1]["receipt"] = {"pr": number, "head": head}
