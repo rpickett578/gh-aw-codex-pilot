@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { countAsciiDigits } from '../src/count-ascii-digits-v1.mjs';
+import { loadApprovedSource } from './phase4-sandbox.mjs';
+const { countAsciiDigits } = await loadApprovedSource('../src/count-ascii-digits-v1.mjs');
 
 test('empty string returns zero', () => assert.equal(countAsciiDigits(''), 0));
 test('ASCII digits are counted', () => assert.equal(countAsciiDigits('0123456789'), 10));
@@ -17,5 +18,5 @@ test('do not change or coerce primitive input', () => {
   assert.equal(input, 'X1😄2 ३ Z');
 });
 for (const input of [null, undefined, 0, 5, false, [], {}, new String('12'), 12n, Symbol('digit')]) {
-  test('reject non-primitive string', () => assert.throws(() => countAsciiDigits(input), TypeError));
+  test('reject non-primitive string', () => assert.throws(() => countAsciiDigits(input), e => e?.name === 'TypeError'));
 }
