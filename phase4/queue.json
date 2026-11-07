@@ -38,6 +38,14 @@
         "pr": 18,
         "head": "9e462de9a5bc15953e0ce43ae33e719a6d8b32d8"
       }
+    },
+    {
+      "id": "count-ascii-digits-v1",
+      "issue": 23,
+      "allowed_files": [
+        "src/count-ascii-digits-v1.mjs"
+      ],
+      "max_ai_credits": 53
     }
   ]
 }

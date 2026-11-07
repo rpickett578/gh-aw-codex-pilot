@@ -286,7 +286,8 @@ jobs:
           github.event.pull_request.head.ref != 'codex/phase4-generic-worker-runtime' &&
           github.event.pull_request.head.ref != 'codex/phase4-dispatch-ledger-dryrun' &&
           github.event.pull_request.head.ref != 'codex/phase4-root-worker-gate' &&
-          github.event.pull_request.head.ref != 'codex/phase4-source-ci-foundation'
+          github.event.pull_request.head.ref != 'codex/phase4-source-ci-foundation' &&
+          github.event.pull_request.head.ref != 'codex/phase4-queue-first-task'
         env:
           REPOSITORY: ${{ github.repository }}
           HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
@@ -320,8 +321,7 @@ jobs:
           allowed = {'scripts/phase4_source_ci.py', 'test/test_phase4_source_ci.py',
                      'scripts/phase4_queue.py', 'test/test_phase4_queue.py',
                      'test/count-ascii-digits-v1.test.mjs',
-                     'test/count-ascii-digits-v1.test-meta.json',
-                     'test/phase4-sandbox.mjs', '.github/workflows/ci.yml'}
+                     'test/count-ascii-digits-v1.test-meta.json', '.github/workflows/ci.yml'}
           names = set(subprocess.check_output(['git','diff','--name-only',
                           os.environ['BASE_SHA'] + '...' + os.environ['HEAD_SHA']],
                           text=True).splitlines())
@@ -340,6 +340,57 @@ jobs:
           )
           "$RUNNER_TEMP/actionlint" .github/workflows/ci.yml
           echo PHASE4_SOURCE_CI_FOUNDATION_PASS
+      - name: Verify first reviewed Phase4 queue task before any paid dispatch
+        if: github.event.pull_request.head.ref == 'codex/phase4-queue-first-task'
+        env:
+          REPOSITORY: ${{ github.repository }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$REPOSITORY" = 'rpickett578/gh-aw-codex-pilot'
+          test "$HEAD_REPOSITORY" = "$REPOSITORY"
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          python3 - <<'PY'
+          import json, os, subprocess
+          allowed = {'phase4/queue.json', 'test/test_phase4_queue.py', '.github/workflows/ci.yml'}
+          changed = set(subprocess.check_output(['git','diff','--name-only',
+                            os.environ['BASE_SHA'] + '...' + os.environ['HEAD_SHA']],
+                            text=True).splitlines())
+          assert changed and changed <= allowed, f'Unexpected approved queue PR files: {sorted(changed - allowed)}'
+          from sys import path
+          path.insert(0, 'scripts')
+          from phase4_queue import validate, LEGACY_PHASE3_IDS
+          q = json.load(open('phase4/queue.json', encoding='utf-8'))
+          base_queue = json.loads(subprocess.check_output(
+              ['git', 'show', os.environ['BASE_SHA'] + ':phase4/queue.json'],
+              text=True))
+          approved = {'id':'count-ascii-digits-v1', 'issue':23,
+                      'allowed_files':['src/count-ascii-digits-v1.mjs'], 'max_ai_credits':53}
+          expected_queue = json.loads(json.dumps(base_queue))
+          expected_queue['tasks'].append(approved)
+          assert q == expected_queue, 'historic receipts or approved queue metadata changed'
+          tasks = validate(q)
+          assert len(tasks) == len(base_queue['tasks']) + 1
+          assert len([t for t in tasks if t['id'] in LEGACY_PHASE3_IDS]) == 3
+          assert not subprocess.run(['git','cat-file','-e', os.environ['HEAD_SHA'] + ':src/count-ascii-digits-v1.mjs'], capture_output=True).returncode == 0, 'worker source was already added'
+          print('PHASE4_FIRST_TASK_EXACT_QUEUE_APPROVAL_PASS')
+          PY
+          python3 -m unittest discover -s test -p 'test_phase4_queue.py' -v
+          python3 -m unittest discover -s test -p 'test_phase4_dispatch.py' -v
+          python3 -m py_compile scripts/phase4_queue.py
+          git diff --check "$BASE_SHA...$HEAD_SHA"
+          gh release download v1.7.7 -R rhysd/actionlint -p actionlint_1.7.7_linux_amd64.tar.gz -p actionlint_1.7.7_checksums.txt -D "$RUNNER_TEMP"
+          (
+            cd "$RUNNER_TEMP"
+            grep ' actionlint_1.7.7_linux_amd64.tar.gz$' actionlint_1.7.7_checksums.txt | sha256sum -c -
+            tar -xzf actionlint_1.7.7_linux_amd64.tar.gz actionlint
+          )
+          "$RUNNER_TEMP/actionlint" .github/workflows/ci.yml
+          echo PHASE4_FIRST_TASK_APPROVED_NO_PAID_EXECUTION
       - name: Compile the three inert Phase 3 gh-aw sources with pinned official v1.0.1
         if: github.event.pull_request.base.sha == 'cdf9d8bb948d36f515e3cb8707e44baab07cd53a' && github.event.pull_request.head.ref == 'codex/phase3-three-task-pilot' && github.event.pull_request.head.repo.full_name == github.repository
         env:

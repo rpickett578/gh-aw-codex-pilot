@@ -9,7 +9,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import phase4_queue as q
 
-BASE = json.loads((ROOT / "phase4/queue.json").read_text(encoding="utf-8"))
+LIVE_QUEUE = json.loads((ROOT / "phase4/queue.json").read_text(encoding="utf-8"))
+BASE = {**LIVE_QUEUE, "tasks": [
+    item for item in LIVE_QUEUE["tasks"] if item["id"] in q.LEGACY_PHASE3_IDS
+]}
 
 
 def pending(number=19, ident="pilot-next-v1"):
@@ -96,6 +99,20 @@ class QueueTests(unittest.TestCase):
                 manifest["tasks"][-1]["id"] = ident
                 with self.assertRaises(q.QueueError):
                     q.decide(manifest, snap)
+
+    def test_actual_staged_queue_selects_first_outstanding_task(self):
+        q.validate(LIVE_QUEUE)
+        pending_tasks = [item for item in LIVE_QUEUE["tasks"] if
+                         item.get("receipt") is None]
+        if not pending_tasks:
+            self.skipTest("No pending queue tasks")
+        snap = fake()
+        for item in pending_tasks:
+            snap["issues"][str(item["issue"])] = {
+                "number": item["issue"], "state": "open"}
+        result = q.decide(LIVE_QUEUE, snap)
+        self.assertEqual(result["action"], "READY_CODING")
+        self.assertEqual(result["task"], pending_tasks[0]["id"])
 
     def test_completed_history_is_not_relaunched(self):
         self.assertEqual(q.decide(BASE, fake()),
