@@ -13,6 +13,9 @@ QUEUE_FILE = Path(__file__).resolve().parents[1] / "phase4" / "queue.json"
 TASK_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
 SHA_RE = re.compile(r"[a-f0-9]{40}\Z")
 SOURCE_RE = re.compile(r"src/[a-zA-Z0-9_./-]+\Z")
+LEGACY_PHASE3_IDS = frozenset(("ascii-vowel-count-v1",
+                               "strip-ascii-controls-v1",
+                               "collapse-ascii-spaces-v1"))
 
 
 class QueueError(Exception):
@@ -63,8 +66,21 @@ def validate(manifest):
 
 
 def branch_for(item):
-    prefix = "codex/phase3-" if item.get("receipt") is not None else "codex/phase4-"
+    # Do not change a Phase 4 PR branch when a completion receipt is attached.
+    prefix = "codex/phase3-" if item["id"] in LEGACY_PHASE3_IDS else "codex/phase4-"
     return prefix + item["id"]
+
+
+def workflow_path_is(path, expected):
+    """GitHub may append @main or a ref to its workflow run path."""
+    if path == expected:
+        return True
+    if not isinstance(path, str) or not path.startswith(expected + "@"):
+        return False
+    suffix = path[len(expected) + 1:]
+    return bool(suffix and len(suffix) <= 180 and
+                re.fullmatch(r"[A-Za-z0-9_./-]+", suffix) and
+                ".." not in suffix.split("/"))
 
 
 def native_review_origin(review, item, snapshot):
@@ -73,7 +89,7 @@ def native_review_origin(review, item, snapshot):
             actor.get("id") == 41898282 and review.get("state") == "COMMENTED",
             "review was not published by GitHub Actions")
     body = review.get("body") or ""
-    workflow = "phase3-review" if item.get("receipt") is not None else "phase4-review"
+    workflow = "phase3-review" if item["id"] in LEGACY_PHASE3_IDS else "phase4-review"
     call = '[gh-aw-workflow-call-id]: # "rpickett578%2Fgh-aw-codex-pilot%2F' + workflow + '"'
     require(call in body, "native review call identity missing")
     expr = (r'id: ([0-9]+), workflow_id: ' + re.escape(workflow) +
@@ -87,9 +103,10 @@ def native_review_origin(review, item, snapshot):
             run.get("run_attempt") == 1 and
             run.get("status") == "completed" and
             run.get("conclusion") == "success" and
-            run.get("path") == (".github/workflows/phase3-chain.yml" if
-                                item.get("receipt") is not None else
-                                ".github/workflows/phase4-chain.yml") and
+            workflow_path_is(run.get("path"),
+                ".github/workflows/phase3-chain.yml" if
+                item["id"] in LEGACY_PHASE3_IDS else
+                ".github/workflows/phase4-chain.yml") and
             (run.get("actor") or {}).get("login") == "rpickett578" and
             (run.get("actor") or {}).get("id") == 313606620,
             "independent review root run did not pass attestation")
@@ -111,11 +128,27 @@ def review_verdict(reviews, item, head, snapshot):
             result = json.loads(marker[0])
         except (ValueError, TypeError) as exc:
             raise QueueError("malformed structured review JSON") from exc
-        require(isinstance(result, dict) and result.get("task") == item["id"] and
+        require(isinstance(result, dict) and
+                set(result) == ({"install_sha", "task", "head", "verdict", "findings"}
+                                if item["id"] in LEGACY_PHASE3_IDS else
+                                {"task", "head", "verdict", "findings"}) and
+                result.get("task") == item["id"] and
                 result.get("head") == head and result.get("verdict") in ("clean", "findings") and
                 isinstance(result.get("findings"), list) and
+                len(result["findings"]) <= 3 and
                 (result["verdict"] == "clean") == (len(result["findings"]) == 0),
                 "review task/head/verdict does not match the queued work")
+        for finding in result["findings"]:
+            require(isinstance(finding, dict) and
+                    set(finding) == {"input", "expected", "line", "reason"} and
+                    type(finding["line"]) is int and
+                    1 <= finding["line"] <= 200 and
+                    isinstance(finding["reason"], str) and
+                    1 <= len(finding["reason"]) <= 500 and
+                    len(json.dumps(finding["input"])) <= 256 and
+                    isinstance(finding["expected"], dict) and
+                    set(finding["expected"]) in ({"value"}, {"error"}),
+                    "review finding is malformed or oversized")
         matches.append(result["verdict"])
     require(len(matches) <= 1, "duplicate independent structured review")
     return matches[0] if matches else None
@@ -165,7 +198,7 @@ def task_status(item, snapshot):
     ci_runs = details.get("ci_runs")
     require(isinstance(ci_runs, list) and any(
             run.get("head_sha") == head and
-            run.get("path") == ".github/workflows/ci.yml" and
+            workflow_path_is(run.get("path"), ".github/workflows/ci.yml") and
             run.get("event") == "pull_request" and
             run.get("run_attempt") == 1 and
             run.get("status") == "completed" and
