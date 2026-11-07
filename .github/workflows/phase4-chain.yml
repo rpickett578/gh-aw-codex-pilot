@@ -1,0 +1,102 @@
+name: Phase 4 continuous synthetic worker chain
+run-name: phase4-pilot-root-no-paid-dispatch
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'
+permissions: {}
+concurrency:
+  group: phase4-one-active-root-run
+  cancel-in-progress: false
+jobs:
+  preview:
+    if: >-
+      github.repository == 'rpickett578/gh-aw-codex-pilot' &&
+      github.ref == 'refs/heads/main' &&
+      github.run_attempt == 1 &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'workflow_dispatch' && github.actor == 'rpickett578'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
+    outputs:
+      action: ${{ steps.plan.outputs.action }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 scripts/phase4_dispatch.py --preview | tee "$RUNNER_TEMP/phase4-preview.json"
+          python3 - <<'PY'
+          import json, os
+          r = json.load(open(os.environ["RUNNER_TEMP"] + "/phase4-preview.json"))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf8") as f:
+              f.write("action=" + r["selected"]["action"] + "\n")
+          PY
+          echo PHASE4_NO_PAID_DISPATCH
+  reserve:
+    needs: preview
+    # Disabled until the single bounded paid-worker pilot is separately authorized.
+    if: ${{ false }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    permissions: {contents: write, issues: read, pull-requests: read, checks: read, actions: read}
+    outputs:
+      action: ${{ steps.reservation.outputs.action }}
+      task: ${{ steps.reservation.outputs.task }}
+      issue: ${{ steps.reservation.outputs.issue }}
+      source: ${{ steps.reservation.outputs.source }}
+      pr: ${{ steps.reservation.outputs.pr }}
+      head: ${{ steps.reservation.outputs.head }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - id: reservation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PHASE4_CLAIMS_ENABLED: reviewed-install
+        run: |
+          set -euo pipefail
+          python3 scripts/phase4_dispatch.py --claim | tee "$RUNNER_TEMP/phase4-reservation.json"
+          python3 - <<'PY'
+          import json, os
+          x = json.load(open(os.environ["RUNNER_TEMP"] + "/phase4-reservation.json"))
+          assert x.get("decision") == "RESERVED_NO_WORKER_LAUNCH", "no authoritative durable receipt"
+          c = x["claim"]
+          fields = {"action": c["stage"], "task": c["task"], "issue": str(c["issue"]),
+                    "source": c["source"], "pr": str(c["pr"] or ""), "head": c["head"]}
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf8") as f:
+              for k, v in fields.items():
+                  assert "\n" not in v and "\r" not in v, "invalid output"
+                  f.write(k + "=" + v + "\n")
+          print("PHASE4_RESERVATION_CONFIRMED_NO_WORKER_YET")
+          PY
+  coder:
+    needs: reserve
+    # Never launch a paid agent until an explicit activation change is reviewed.
+    if: ${{ false }}
+    uses: ./.github/workflows/phase4-coder.lock.yml
+    with:
+      task_id: ${{ needs.reserve.outputs.task }}
+      issue: ${{ needs.reserve.outputs.issue }}
+      source_path: ${{ needs.reserve.outputs.source }}
+    permissions: {contents: write, issues: write, pull-requests: write, checks: read, actions: read}
+    secrets: inherit
+  reviewer:
+    needs: reserve
+    if: ${{ false }}
+    uses: ./.github/workflows/phase4-review.lock.yml
+    with:
+      task_id: ${{ needs.reserve.outputs.task }}
+      issue: ${{ needs.reserve.outputs.issue }}
+      pr_number: ${{ needs.reserve.outputs.pr }}
+      head_sha: ${{ needs.reserve.outputs.head }}
+    permissions: {contents: write, issues: write, pull-requests: write, checks: read, actions: read}
+    secrets: inherit
