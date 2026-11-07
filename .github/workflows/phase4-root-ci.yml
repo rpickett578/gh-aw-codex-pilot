@@ -1,0 +1,29 @@
+name: Phase 4 disabled root offline verification
+on:
+  pull_request:
+    branches: [main, codex/phase4-dispatch-ledger-dryrun]
+    types: [opened, synchronize, reopened, ready_for_review]
+permissions: {}
+jobs:
+  verify:
+    if: >-
+      github.repository == 'rpickett578/gh-aw-codex-pilot' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'codex/phase4-root-worker-gate'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Verify disabled root and scheduled review provenance
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s test -p 'test_phase4_root.py' -v
+          python3 -m unittest discover -s test -p 'test_phase4_dispatch.py' -v
+          python3 -m unittest discover -s test -p 'test_phase4_queue.py' -v
+          python3 -m py_compile scripts/phase4_dispatch.py scripts/phase4_queue.py
+          echo PHASE4_ROOT_NO_PAID_EXECUTION_PASS
