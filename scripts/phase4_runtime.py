@@ -55,12 +55,19 @@ def admit(verify_checkout=True):
     require(len(item["allowed_files"]) == 1,
             "generic v1 worker permits exactly one source file")
     if expected_state == "READY_CODING":
+        require(os.environ.get("PHASE4_SOURCE") == item["allowed_files"][0],
+                "publisher source path does not equal approved manifest source")
         if verify_checkout:
             require(sh("rev-parse", "HEAD") == sha,
                     "coder must start from exact reviewed main commit")
     else:
         require(str(selected.get("pr")) == os.environ.get("PHASE4_PR"),
                 "reviewer PR identity changed")
+        matching = [p for p in snapshot["pulls"] if
+                    p.get("number") == selected.get("pr")]
+        require(len(matching) == 1 and
+                (matching[0].get("head") or {}).get("sha") == os.environ.get("PHASE4_HEAD"),
+                "reviewer requested SHA differs from live PR head")
         if verify_checkout:
             require(sh("rev-parse", "HEAD") == os.environ.get("PHASE4_HEAD"),
                     "reviewer not on pinned current PR head")
