@@ -89,7 +89,7 @@ jobs:
           test "$(git -C "$native" rev-parse HEAD)" = 0627fdbe4beb5f3b71aa569f8d97150b87f2111a
           echo "GH_AW_NATIVE_ACTIONS=$native/actions/setup/js" >> "$GITHUB_ENV"
       - name: Validate exact installation or the scoped functional tests
-        if: github.event.pull_request.head.ref != 'codex/phase3-resume-and-fail-closed' && github.event.pull_request.head.ref != 'codex/phase4-persistent-queue-foundation' && github.event.pull_request.head.ref != 'codex/phase4-generic-worker-runtime' && github.event.pull_request.head.ref != 'codex/phase4-dispatch-ledger-dryrun' && github.event.pull_request.head.ref != 'codex/phase4-root-worker-gate'
+        if: github.event.pull_request.head.ref != 'codex/phase3-resume-and-fail-closed' && github.event.pull_request.head.ref != 'codex/phase4-persistent-queue-foundation' && github.event.pull_request.head.ref != 'codex/phase4-generic-worker-runtime' && github.event.pull_request.head.ref != 'codex/phase4-dispatch-ledger-dryrun' && github.event.pull_request.head.ref != 'codex/phase4-root-worker-gate' && !startsWith(github.event.pull_request.head.ref, 'codex/phase4-')
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -279,6 +279,60 @@ jobs:
           )
           "$RUNNER_TEMP/actionlint" .github/workflows/phase4-chain.yml .github/workflows/phase4-root-ci.yml .github/workflows/ci.yml
           echo PHASE4D_TESTS_AND_ACTIONLINT_PASS
+      - name: Verify approved one-source Phase4 worker PR with trusted main fixture
+        if: >-
+          startsWith(github.event.pull_request.head.ref, 'codex/phase4-') &&
+          github.event.pull_request.head.ref != 'codex/phase4-persistent-queue-foundation' &&
+          github.event.pull_request.head.ref != 'codex/phase4-generic-worker-runtime' &&
+          github.event.pull_request.head.ref != 'codex/phase4-dispatch-ledger-dryrun' &&
+          github.event.pull_request.head.ref != 'codex/phase4-root-worker-gate' &&
+          github.event.pull_request.head.ref != 'codex/phase4-source-ci-foundation'
+        env:
+          REPOSITORY: ${{ github.repository }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show "$BASE_SHA:scripts/phase4_source_ci.py" > "$RUNNER_TEMP/phase4_source_ci.py"
+          PYTHONPATH="$GITHUB_WORKSPACE/scripts" python3 "$RUNNER_TEMP/phase4_source_ci.py"
+      - name: Verify Phase4 immutable generic source CI foundation
+        if: github.event.pull_request.head.ref == 'codex/phase4-source-ci-foundation'
+        env:
+          REPOSITORY: ${{ github.repository }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$REPOSITORY" = 'rpickett578/gh-aw-codex-pilot'
+          test "$HEAD_REPOSITORY" = "$REPOSITORY"
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          python3 - <<'PY'
+          import os, subprocess
+          allowed = {'scripts/phase4_source_ci.py', 'test/test_phase4_source_ci.py',
+                     'test/count-ascii-digits-v1.test.mjs', '.github/workflows/ci.yml'}
+          names = set(subprocess.check_output(['git','diff','--name-only',
+                          os.environ['BASE_SHA'] + '...' + os.environ['HEAD_SHA']],
+                          text=True).splitlines())
+          assert names and names <= allowed, f'Unexpected source CI foundation scope: {sorted(names - allowed)}'
+          print('PHASE4_SOURCE_CI_FOUNDATION_SCOPE_PASS', sorted(names))
+          PY
+          python3 -m unittest discover -s test -p 'test_phase4_source_ci.py' -v
+          python3 -m py_compile scripts/phase4_source_ci.py
+          git diff --check "$BASE_SHA...$HEAD_SHA"
+          gh release download v1.7.7 -R rhysd/actionlint -p actionlint_1.7.7_linux_amd64.tar.gz -p actionlint_1.7.7_checksums.txt -D "$RUNNER_TEMP"
+          (
+            cd "$RUNNER_TEMP"
+            grep ' actionlint_1.7.7_linux_amd64.tar.gz$' actionlint_1.7.7_checksums.txt | sha256sum -c -
+            tar -xzf actionlint_1.7.7_linux_amd64.tar.gz actionlint
+          )
+          "$RUNNER_TEMP/actionlint" .github/workflows/ci.yml
+          echo PHASE4_SOURCE_CI_FOUNDATION_PASS
       - name: Compile the three inert Phase 3 gh-aw sources with pinned official v1.0.1
         if: github.event.pull_request.base.sha == 'cdf9d8bb948d36f515e3cb8707e44baab07cd53a' && github.event.pull_request.head.ref == 'codex/phase3-three-task-pilot' && github.event.pull_request.head.repo.full_name == github.repository
         env:
