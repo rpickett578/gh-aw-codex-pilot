@@ -63,11 +63,11 @@ class SourceCITests(unittest.TestCase):
 
     def test_runner_requires_exact_20_real_cases(self):
         def tap(tests, passed=None):
-            return ("TAP version 13\\n" +
-                    "\\n".join(["# tests " + str(tests),
+            return ("TAP version 13\n" +
+                    "\n".join(["# tests " + str(tests),
                                 "# pass " + str(tests if passed is None else passed),
                                 "# fail 0", "# cancelled 0",
-                                "# skipped 0", "# todo 0"]) + "\\n")
+                                "# skipped 0", "# todo 0"]) + "\n")
         c.required_tests(tap(20), 20)
         with self.assertRaises(QueueError):
             c.required_tests(tap(1), 20)  # process.exit(0) ran no real fixture assertions
