@@ -71,6 +71,21 @@ class DispatchTests(unittest.TestCase):
         r = self.plan("READY_CODING", ledger)
         self.assertEqual(r["decision"], "HELD")
 
+    def test_main_change_prevents_effective_claim(self):
+        with patch.object(dp, "get", return_value={"commit": {"sha": HEAD}}):
+            with self.assertRaises(dp.QueueError):
+                dp.require_current_main(MAIN)
+        with patch.object(dp, "get", return_value={"commit": {"sha": MAIN}}):
+            dp.require_current_main(MAIN)
+
+    def test_stale_main_reservation_is_not_reused(self):
+        ledger = dp.initial_ledger()
+        ledger["claims"].append(claim())
+        with patch.object(dp, "decide", return_value=selected("READY_CODING")):
+            result = dp.decide_claim(manifest(), snapshot(), ledger, 15, HEAD)
+        self.assertEqual(result["decision"], "HELD")
+        self.assertIn("reconcile", result["reason"])
+
     def test_reviewer_requires_prior_coder_claim(self):
         with self.assertRaises(dp.QueueError):
             self.plan("READY_REVIEW")
