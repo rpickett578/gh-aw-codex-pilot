@@ -1,0 +1,31 @@
+name: Phase 4 dispatch and ledger offline verification
+on:
+  pull_request:
+    branches: [main, codex/phase4-generic-worker-runtime]
+    types: [opened, synchronize, reopened, ready_for_review]
+permissions: {}
+jobs:
+  verify:
+    if: >-
+      github.repository == 'rpickett578/gh-aw-codex-pilot' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'codex/phase4-dispatch-ledger-dryrun'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Exercise budget claims and duplicate-spend prevention
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s test -p 'test_phase4_dispatch.py' -v
+          python3 -m unittest discover -s test -p 'test_phase4_runtime.py' -v
+          python3 -m unittest discover -s test -p 'test_phase4_queue.py' -v
+          python3 -m py_compile scripts/phase4_dispatch.py
+          test -s .github/workflows/phase4-dispatch-preview.yml
+          ! grep -Eq '^[[:space:]]+uses:[[:space:]]+\./\.github/workflows/phase4-(coder|review)\.lock\.yml' .github/workflows/phase4-dispatch-preview.yml
+          echo PHASE4_DISPATCH_LEDGER_OFFLINE_PASS
