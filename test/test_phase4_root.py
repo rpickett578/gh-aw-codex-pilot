@@ -27,7 +27,7 @@ class RootWorkflowTests(unittest.TestCase):
         text = WORKFLOW.read_text()
         for name in ("reserve", "coder", "reviewer"):
             with self.subTest(job=name):
-                self.assertIn("if: ${{ false }}", job(text, name))
+                self.assertIn("if: ${{ false && ", job(text, name))
 
     def test_only_preview_can_run_unauthorized(self):
         text = WORKFLOW.read_text()
@@ -46,6 +46,8 @@ class RootWorkflowTests(unittest.TestCase):
         self.assertIn("RESERVED_NO_WORKER_LAUNCH", job(text, "reserve"))
         self.assertIn("source_path:", job(text, "coder"))
         self.assertIn("head_sha:", job(text, "reviewer"))
+        self.assertIn("needs.reserve.outputs.action == 'READY_CODING'", job(text, "coder"))
+        self.assertIn("needs.reserve.outputs.action == 'READY_REVIEW'", job(text, "reviewer"))
 
 
 if __name__ == "__main__":
