@@ -82,8 +82,12 @@ def decide_claim(manifest, snapshot, ledger, run_id, install_sha):
                 c["source"] == item["allowed_files"][0] for c in existing),
             "ledger reservation conflicts with approved task")
     if any(c["stage"] == action for c in existing):
-        return {"decision": "HELD", "reason": "already reserved", "task": task,
-                "stage": action}
+        prior = next(c for c in existing if c["stage"] == action)
+        return {"decision": "HELD",
+                "reason": ("stale-main claim; reconcile only after proving no paid"
+                           " worker launched" if prior["install_sha"] != install_sha
+                           else "already reserved"),
+                "task": task, "stage": action}
     if action == "READY_REVIEW":
         require(any(c["stage"] == "READY_CODING" for c in existing),
                 "review lacks prior coder reservation")
@@ -154,6 +158,12 @@ def write_claim(ledger, blob_sha):
     return result["commit"].get("sha")
 
 
+def require_current_main(approved_sha):
+    """Revalidate authority immediately around an effective ledger reservation."""
+    require(get("/branches/main").get("commit", {}).get("sha") == approved_sha,
+            "approved main changed; do not reserve or launch a worker")
+
+
 def require_root_identity():
     require(os.environ.get("GITHUB_REPOSITORY") == REPO and
             os.environ.get("GITHUB_REF") == "refs/heads/main" and
@@ -188,8 +198,10 @@ def main():
     if result["decision"] != "RESERVE":
         print(json.dumps(result, sort_keys=True))
         return
+    require_current_main(sha)
     ledger["claims"].append(result["claim"])
     commit = write_claim(ledger, blob_sha)
+    require_current_main(sha)
     require(isinstance(commit, str) and len(commit) == SHA_SIZE,
             "no durable ledger receipt")
     print(json.dumps({"decision": "RESERVED_NO_WORKER_LAUNCH",
