@@ -23,11 +23,22 @@ class RootWorkflowTests(unittest.TestCase):
         self.assertIn("cron: '*/15 * * * *'", text)
         self.assertIn("cancel-in-progress: false", text)
 
-    def test_reservation_and_both_paid_workers_are_hard_disabled(self):
+    def test_only_first_approved_task_can_be_reserved_or_executed(self):
         text = WORKFLOW.read_text()
-        for name in ("reserve", "coder", "reviewer"):
-            with self.subTest(job=name):
-                self.assertIn("if: ${{ false && ", job(text, name))
+        preview = job(text, "preview")
+        reserve = job(text, "reserve")
+        coder = job(text, "coder")
+        reviewer = job(text, "reviewer")
+        self.assertIn('f.write("task="', preview)
+        self.assertIn("needs.preview.outputs.task == 'count-ascii-digits-v1'", reserve)
+        self.assertIn("needs.preview.outputs.action == 'READY_CODING'", reserve)
+        self.assertIn("needs.preview.outputs.action == 'READY_REVIEW'", reserve)
+        for scope in (reserve, coder, reviewer):
+            self.assertNotIn("if: ${{ false", scope)
+        self.assertIn("needs.reserve.outputs.task == 'count-ascii-digits-v1'", coder)
+        self.assertIn("needs.reserve.outputs.task == 'count-ascii-digits-v1'", reviewer)
+        self.assertIn("needs.reserve.outputs.action == 'READY_CODING'", coder)
+        self.assertIn("needs.reserve.outputs.action == 'READY_REVIEW'", reviewer)
 
     def test_only_preview_can_run_unauthorized(self):
         text = WORKFLOW.read_text()

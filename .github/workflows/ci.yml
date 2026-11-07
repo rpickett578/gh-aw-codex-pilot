@@ -287,7 +287,8 @@ jobs:
           github.event.pull_request.head.ref != 'codex/phase4-dispatch-ledger-dryrun' &&
           github.event.pull_request.head.ref != 'codex/phase4-root-worker-gate' &&
           github.event.pull_request.head.ref != 'codex/phase4-source-ci-foundation' &&
-          github.event.pull_request.head.ref != 'codex/phase4-queue-first-task'
+          github.event.pull_request.head.ref != 'codex/phase4-queue-first-task' &&
+          github.event.pull_request.head.ref != 'codex/phase4-first-paid-activation'
         env:
           REPOSITORY: ${{ github.repository }}
           HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
@@ -391,6 +392,47 @@ jobs:
           )
           "$RUNNER_TEMP/actionlint" .github/workflows/ci.yml
           echo PHASE4_FIRST_TASK_APPROVED_NO_PAID_EXECUTION
+      - name: Verify one-task-only Phase4 paid pilot activation change
+        if: github.event.pull_request.head.ref == 'codex/phase4-first-paid-activation'
+        env:
+          REPOSITORY: ${{ github.repository }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$REPOSITORY" = 'rpickett578/gh-aw-codex-pilot'
+          test "$HEAD_REPOSITORY" = "$REPOSITORY"
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          python3 - <<'PY'
+          import json, os, subprocess
+          allowed = {'.github/workflows/phase4-chain.yml',
+                     '.github/workflows/ci.yml', 'test/test_phase4_root.py'}
+          changed = set(subprocess.check_output(['git','diff','--name-only',
+                             os.environ['BASE_SHA'] + '...' + os.environ['HEAD_SHA']],
+                             text=True).splitlines())
+          assert changed and changed <= allowed, f'Unexpected paid activation changes: {sorted(changed - allowed)}'
+          queue = json.load(open('phase4/queue.json', encoding='utf8'))
+          active = [t for t in queue['tasks'] if t.get('receipt') is None]
+          assert active == [{'id':'count-ascii-digits-v1', 'issue':23,
+                             'allowed_files':['src/count-ascii-digits-v1.mjs'],
+                             'max_ai_credits':53}], 'Only one fixed task may be paid'
+          print('PHASE4_ONE_TASK_ONLY_ENVELOPE_PASS')
+          PY
+          python3 -m unittest discover -s test -p 'test_phase4_root.py' -v
+          python3 -m unittest discover -s test -p 'test_phase4_dispatch.py' -v
+          python3 -m unittest discover -s test -p 'test_phase4_queue.py' -v
+          git diff --check "$BASE_SHA...$HEAD_SHA"
+          gh release download v1.7.7 -R rhysd/actionlint -p actionlint_1.7.7_linux_amd64.tar.gz -p actionlint_1.7.7_checksums.txt -D "$RUNNER_TEMP"
+          (
+            cd "$RUNNER_TEMP"
+            grep ' actionlint_1.7.7_linux_amd64.tar.gz$' actionlint_1.7.7_checksums.txt | sha256sum -c -
+            tar -xzf actionlint_1.7.7_linux_amd64.tar.gz actionlint
+          )
+          "$RUNNER_TEMP/actionlint" .github/workflows/phase4-chain.yml .github/workflows/ci.yml
+          echo PHASE4_ONE_TASK_ACTIVATION_CI_PASS
       - name: Compile the three inert Phase 3 gh-aw sources with pinned official v1.0.1
         if: github.event.pull_request.base.sha == 'cdf9d8bb948d36f515e3cb8707e44baab07cd53a' && github.event.pull_request.head.ref == 'codex/phase3-three-task-pilot' && github.event.pull_request.head.repo.full_name == github.repository
         env:

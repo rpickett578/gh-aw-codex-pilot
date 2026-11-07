@@ -1,5 +1,5 @@
 name: Phase 4 continuous synthetic worker chain
-run-name: phase4-pilot-root-no-paid-dispatch
+run-name: phase4-one-synthetic-task-only
 on:
   workflow_dispatch:
   schedule:
@@ -21,6 +21,7 @@ jobs:
     permissions: {contents: read, issues: read, pull-requests: read, checks: read, actions: read}
     outputs:
       action: ${{ steps.plan.outputs.action }}
+      task: ${{ steps.plan.outputs.task }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -37,12 +38,13 @@ jobs:
           r = json.load(open(os.environ["RUNNER_TEMP"] + "/phase4-preview.json"))
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf8") as f:
               f.write("action=" + r["selected"]["action"] + "\n")
+              f.write("task=" + str(r["selected"].get("task") or "") + "\n")
           PY
           echo PHASE4_NO_PAID_DISPATCH
   reserve:
     needs: preview
-    # Disabled until the single bounded paid-worker pilot is separately authorized.
-    if: ${{ false && (needs.preview.outputs.action == 'READY_CODING' || needs.preview.outputs.action == 'READY_REVIEW') }}
+    # ONE approved synthetic task only; at most one coder and one reviewer.
+    if: ${{ needs.preview.outputs.task == 'count-ascii-digits-v1' && (needs.preview.outputs.action == 'READY_CODING' || needs.preview.outputs.action == 'READY_REVIEW') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 6
     permissions: {contents: write, issues: read, pull-requests: read, checks: read, actions: read}
@@ -80,8 +82,8 @@ jobs:
           PY
   coder:
     needs: reserve
-    # Never launch a paid agent until an explicit activation change is reviewed.
-    if: ${{ false && needs.reserve.outputs.action == 'READY_CODING' }}
+    # Exact task and durable reserve evidence are required before paid work.
+    if: ${{ needs.reserve.outputs.task == 'count-ascii-digits-v1' && needs.reserve.outputs.action == 'READY_CODING' }}
     uses: ./.github/workflows/phase4-coder.lock.yml
     with:
       task_id: ${{ needs.reserve.outputs.task }}
@@ -91,7 +93,7 @@ jobs:
     secrets: inherit
   reviewer:
     needs: reserve
-    if: ${{ false && needs.reserve.outputs.action == 'READY_REVIEW' }}
+    if: ${{ needs.reserve.outputs.task == 'count-ascii-digits-v1' && needs.reserve.outputs.action == 'READY_REVIEW' }}
     uses: ./.github/workflows/phase4-review.lock.yml
     with:
       task_id: ${{ needs.reserve.outputs.task }}
