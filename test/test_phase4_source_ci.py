@@ -2,6 +2,8 @@
 from pathlib import Path
 import sys
 import unittest
+import tempfile
+import subprocess
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -78,6 +80,28 @@ class SourceCITests(unittest.TestCase):
         # Printing a fake earlier TAP summary cannot override the final runner count.
         with self.assertRaises(QueueError):
             c.required_tests(tap(20) + tap(1), 20)
+
+    def test_node_permission_sandbox_denies_process_spawns(self):
+        with tempfile.TemporaryDirectory(prefix="phase4-ci-sandbox-") as temp:
+            src = Path(temp) / "source.mjs"
+            fixture = Path(temp) / "fixture.test.mjs"
+            src.write_text("import { spawnSync } from 'node:child_process';" +
+                           "spawnSync('true', []); export const value=1;")
+            fixture.write_text("import test from 'node:test';" +
+                               "import assert from 'node:assert/strict';" +
+                               "import { value } from './source.mjs';" +
+                               "test('one',()=>assert.equal(value,1));")
+            command = c.sandbox_command(src, fixture)
+            self.assertIn("--permission", command)
+            self.assertNotIn("--allow-child-process", command)
+            self.assertNotIn("--allow-worker", command)
+            self.assertTrue(all(not x.startswith("--allow-fs-write") for x in command))
+            self.assertEqual([x for x in command if x.startswith("--allow-fs-read=")],
+                             ["--allow-fs-read=" + str(fixture),
+                              "--allow-fs-read=" + str(src)])
+            result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("ERR_ACCESS_DENIED", result.stdout + result.stderr)
 
     def test_identity_guard_blocks_other_repository(self):
         with patch.dict(c.os.environ, {
