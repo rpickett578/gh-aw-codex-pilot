@@ -28,6 +28,7 @@ tools:
 env:
   PHASE4_TASK_ID: ${{ inputs.task_id }}
   PHASE4_ISSUE: ${{ inputs.issue }}
+  PHASE4_SOURCE: ${{ inputs.source_path }}
   PHASE4_ACTION: READY_CODING
   GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
 pre-agent-steps:
@@ -86,7 +87,7 @@ safe-outputs:
     auto-close-issue: false
     protected-files: blocked
     allowed-files:
-      - src/**
+      - ${{ inputs.source_path }}
     max-patch-files: 1
     max-patch-size: 16
     github-token: ${{ secrets.GH_AW_CI_TRIGGER_TOKEN }}
@@ -113,6 +114,9 @@ on:
         type: string
         required: true
       issue:
+        type: string
+        required: true
+      source_path:
         type: string
         required: true
 if: github.repository == 'rpickett578/gh-aw-codex-pilot' && github.ref == 'refs/heads/main' && github.run_attempt == 1
