@@ -36,6 +36,7 @@ class RuntimeTests(unittest.TestCase):
             "PHASE4_TASK_ID": "pilot-next-v1",
             "PHASE4_ACTION": "READY_CODING",
             "PHASE4_ISSUE": "21",
+            "PHASE4_SOURCE": "src/pilot-next-v1.mjs",
             "PHASE4_QUEUE_PATH": str(self.manifest),
             "PHASE4_HEAD": HEAD,
             "PHASE4_PR": "99",
@@ -76,6 +77,28 @@ class RuntimeTests(unittest.TestCase):
         with patch.object(rt, "get", return_value={"commit": {"sha": HEAD}}):
             with self.assertRaises(rt.QueueError):
                 rt.admit()
+
+    def test_reject_broader_or_wrong_publisher_source(self):
+        for path in ("src/**", "src/unrelated.mjs", "test/forged.test.mjs"):
+            with self.subTest(path=path):
+                with patch.dict(os.environ, {"PHASE4_SOURCE": path}):
+                    with self.assertRaises(rt.QueueError):
+                        rt.admit()
+
+    def test_reject_stale_reviewer_sha(self):
+        with patch.dict(os.environ, {"PHASE4_ACTION": "READY_REVIEW"}):
+            with patch.object(rt, "decide", return_value={
+                    "action": "READY_REVIEW", "task": "pilot-next-v1",
+                    "issue": 21, "index": 0, "max_ai_credits": 60, "pr": 99}):
+                pulls = [{"number": 99, "head": {"sha": "c" * 40}}]
+                with patch.object(rt, "live_snapshot", return_value={
+                    "issues": {"21": {"number": 21, "state": "open",
+                                      "body": "Implement one inert source"}},
+                    "pulls": pulls}):
+                    with self.assertRaises(rt.QueueError):
+                        rt.admit(verify_checkout=False)
+                    pulls[0]["head"]["sha"] = HEAD
+                    self.assertEqual(rt.admit(verify_checkout=False)["head"], HEAD)
 
     def test_enforce_stage_cost_envelope(self):
         with patch.object(rt, "decide", return_value={
