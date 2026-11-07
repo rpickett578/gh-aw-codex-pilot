@@ -23,7 +23,7 @@ class RootWorkflowTests(unittest.TestCase):
         self.assertIn("cron: '*/15 * * * *'", text)
         self.assertIn("cancel-in-progress: false", text)
 
-    def test_only_first_approved_task_can_be_reserved_or_executed(self):
+    def test_all_paid_stages_hard_disabled_after_one_shot_test(self):
         text = WORKFLOW.read_text()
         preview = job(text, "preview")
         reserve = job(text, "reserve")
@@ -34,7 +34,7 @@ class RootWorkflowTests(unittest.TestCase):
         self.assertIn("needs.preview.outputs.action == 'READY_CODING'", reserve)
         self.assertIn("needs.preview.outputs.action == 'READY_REVIEW'", reserve)
         for scope in (reserve, coder, reviewer):
-            self.assertNotIn("if: ${{ false", scope)
+            self.assertIn("if: ${{ false && ", scope)
         self.assertIn("needs.reserve.outputs.task == 'count-ascii-digits-v1'", coder)
         self.assertIn("needs.reserve.outputs.task == 'count-ascii-digits-v1'", reviewer)
         self.assertIn("needs.reserve.outputs.action == 'READY_CODING'", coder)
