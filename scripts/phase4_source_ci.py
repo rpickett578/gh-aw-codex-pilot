@@ -42,6 +42,22 @@ def validate_changed_files(source_path, changed):
     require(changed == [source_path], "task PR must edit exactly its approved source")
 
 
+def required_tests(tap_text, expected):
+    """Use the runner's final TAP summary, not a positive but partial count."""
+    require(type(expected) is int and 1 <= expected <= 200,
+            "invalid reviewed fixture test count")
+    reports = {}
+    for field in ("tests", "pass", "fail", "cancelled", "skipped", "todo"):
+        matches = re.findall(r"^# " + field + r" (\\d+)$",
+                             tap_text, re.M)
+        require(len(matches) > 0, "missing TAP summary: " + field)
+        reports[field] = int(matches[-1])
+    require(reports["tests"] == expected and reports["pass"] == expected and
+            all(reports[field] == 0 for field in
+                ("fail", "cancelled", "skipped", "todo")),
+            "actual fixture case count or outcome differs from approved manifest")
+
+
 def verify():
     repo = os.environ.get("REPOSITORY")
     head_repo = os.environ.get("HEAD_REPOSITORY")
@@ -68,15 +84,24 @@ def verify():
     require(0 < len(fixture_bytes) <= 32768, "immutable task test missing or oversized")
     require(Path(fixture).read_bytes() == fixture_bytes,
             "worker checkout changed immutable tests")
+    meta_path = fixture.removesuffix(".test.mjs") + ".test-meta.json"
+    meta_bytes = subprocess.check_output(["git", "show", base + ":" + meta_path])
+    require(0 < len(meta_bytes) <= 2048, "missing fixture metadata")
+    metadata = json.loads(meta_bytes)
+    require(isinstance(metadata, dict) and
+            set(metadata) == {"expected_tests"}, "invalid fixture metadata")
+    require(Path(meta_path).read_bytes() == meta_bytes,
+            "worker checkout changed immutable fixture metadata")
+    expected = metadata["expected_tests"]
+    require(type(expected) is int and 1 <= expected <= 200,
+            "invalid expected fixture case count")
     # The native PR is already scope-checked; no agent input can alter this path.
     process = subprocess.run(["node", "--test", "--test-reporter=tap", fixture],
                              text=True, stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT, timeout=50)
     print(process.stdout, end="")
-    require(process.returncode == 0 and
-            re.search(r"^# fail 0$", process.stdout, re.M) is not None and
-            re.search(r"^# tests ([1-9][0-9]*)$", process.stdout, re.M) is not None,
-            "immutable task functional tests did not pass")
+    require(process.returncode == 0, "immutable task runner exited unsuccessfully")
+    required_tests(process.stdout, expected)
     print("PHASE4_APPROVED_SOURCE_CI_PASS", task["id"], source_path)
 
 
