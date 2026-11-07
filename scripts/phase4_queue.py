@@ -18,6 +18,12 @@ LEGACY_PHASE3_IDS = frozenset(("ascii-vowel-count-v1",
                                "collapse-ascii-spaces-v1"))
 
 
+PHASE4_ENGINEERING_IDS = frozenset((
+    "persistent-queue-foundation", "generic-worker-runtime",
+    "dispatch-ledger-dryrun", "root-worker-gate",
+    "source-ci-foundation", "queue-first-task", "first-paid-activation",
+))
+
 class QueueError(Exception):
     pass
 
@@ -44,6 +50,8 @@ def validate(manifest):
                 "allowed_files must be nonempty and bounded")
         require(type(budget) is int and 0 <= budget <= 300, "invalid task budget")
         require(ident not in ids and issue not in issues, "duplicate task ID or issue")
+        require(ident not in PHASE4_ENGINEERING_IDS,
+                "task ID collides with a reserved Phase4 engineering branch")
         ids.add(ident)
         issues.add(issue)
         for f in files:
