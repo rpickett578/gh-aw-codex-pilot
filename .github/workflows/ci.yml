@@ -89,7 +89,7 @@ jobs:
           test "$(git -C "$native" rev-parse HEAD)" = 0627fdbe4beb5f3b71aa569f8d97150b87f2111a
           echo "GH_AW_NATIVE_ACTIONS=$native/actions/setup/js" >> "$GITHUB_ENV"
       - name: Validate exact installation or the scoped functional tests
-        if: github.event.pull_request.head.ref != 'codex/phase3-resume-and-fail-closed'
+        if: github.event.pull_request.head.ref != 'codex/phase3-resume-and-fail-closed' && github.event.pull_request.head.ref != 'codex/phase4-persistent-queue-foundation'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -143,6 +143,42 @@ jobs:
           )
           "$RUNNER_TEMP/actionlint" .github/workflows/phase3-chain.yml .github/workflows/ci.yml
           echo 'PHASE3_RESUME_TESTS_AND_ACTIONLINT_PASS'
+      - name: Verify Phase 4 durable queue foundation
+        if: github.event.pull_request.head.ref == 'codex/phase4-persistent-queue-foundation'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$REPOSITORY" = 'rpickett578/gh-aw-codex-pilot'
+          test "$HEAD_REPOSITORY" = "$REPOSITORY"
+          test "$BASE_SHA" = d004619d1e41cee6d140101a7aad254a23615ae6
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          python3 - <<'PY'
+          import subprocess
+          allowed = {'phase4/queue.json', 'scripts/phase4_queue.py',
+                     'test/test_phase4_queue.py', '.github/workflows/phase4-queue-status.yml',
+                     '.github/workflows/ci.yml', 'docs/phase4-queue.md'}
+          names = set(subprocess.check_output(['git','diff','--name-only',
+                          'd004619d1e41cee6d140101a7aad254a23615ae6...HEAD'],
+                          text=True).splitlines())
+          assert names and names <= allowed, f'Unexpected Phase4 scope: {sorted(names - allowed)}'
+          print('PHASE4_EXACT_SCOPE_PASS', sorted(names))
+          PY
+          python3 -m unittest discover -s test -p 'test_phase4_queue.py' -v
+          python3 -m py_compile scripts/phase4_queue.py
+          git diff --check "$BASE_SHA...$HEAD_SHA"
+          gh release download v1.7.7 -R rhysd/actionlint -p actionlint_1.7.7_linux_amd64.tar.gz -p actionlint_1.7.7_checksums.txt -D "$RUNNER_TEMP"
+          (
+            cd "$RUNNER_TEMP"
+            grep ' actionlint_1.7.7_linux_amd64.tar.gz$' actionlint_1.7.7_checksums.txt | sha256sum -c -
+            tar -xzf actionlint_1.7.7_linux_amd64.tar.gz actionlint
+          )
+          "$RUNNER_TEMP/actionlint" .github/workflows/phase4-queue-status.yml .github/workflows/ci.yml
+          echo PHASE4_QUEUE_TESTS_AND_ACTIONLINT_PASS
       - name: Compile the three inert Phase 3 gh-aw sources with pinned official v1.0.1
         if: github.event.pull_request.base.sha == 'cdf9d8bb948d36f515e3cb8707e44baab07cd53a' && github.event.pull_request.head.ref == 'codex/phase3-three-task-pilot' && github.event.pull_request.head.repo.full_name == github.repository
         env:

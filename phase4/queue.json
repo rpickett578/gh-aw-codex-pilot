@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "repository": "rpickett578/gh-aw-codex-pilot",
+  "note": "Ordered durable pilot queue. Entries on reviewed main are approved scope; no per-run approval comment. Completed historical receipts are not runnable again.",
+  "tasks": [
+    {
+      "id": "ascii-vowel-count-v1",
+      "issue": 11,
+      "allowed_files": [
+        "src/ascii-vowel-count.mjs"
+      ],
+      "max_ai_credits": 0,
+      "receipt": {
+        "pr": 15,
+        "head": "b6732694a8621604fe9d0a2058d23ebfde897268"
+      }
+    },
+    {
+      "id": "strip-ascii-controls-v1",
+      "issue": 12,
+      "allowed_files": [
+        "src/strip-ascii-controls.mjs"
+      ],
+      "max_ai_credits": 0,
+      "receipt": {
+        "pr": 17,
+        "head": "472d38eabf0736f0c05f6103f292cd75cb1f4815"
+      }
+    },
+    {
+      "id": "collapse-ascii-spaces-v1",
+      "issue": 13,
+      "allowed_files": [
+        "src/collapse-ascii-spaces.mjs"
+      ],
+      "max_ai_credits": 0,
+      "receipt": {
+        "pr": 18,
+        "head": "9e462de9a5bc15953e0ce43ae33e719a6d8b32d8"
+      }
+    }
+  ]
+}
