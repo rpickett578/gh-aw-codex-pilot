@@ -1,0 +1,42 @@
+name: Phase 4 dispatch planning (no paid workers)
+run-name: phase4-pilot-dispatch-preview
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'
+permissions: {}
+concurrency:
+  group: phase4-pilot-dispatch-preview
+  cancel-in-progress: false
+jobs:
+  preview:
+    if: >-
+      github.repository == 'rpickett578/gh-aw-codex-pilot' &&
+      github.ref == 'refs/heads/main' &&
+      github.run_attempt == 1 &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'workflow_dispatch' && github.actor == 'rpickett578'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      checks: read
+      actions: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Check deterministic ledger decisions offline
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s test -p 'test_phase4_dispatch.py' -v
+      - name: Preview current approved queue; never claim or dispatch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 scripts/phase4_dispatch.py --preview
+          echo PHASE4_DRY_RUN_ONLY_NO_PAID_WORKERS
