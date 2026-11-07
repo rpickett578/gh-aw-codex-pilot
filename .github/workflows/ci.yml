@@ -296,8 +296,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git show "$BASE_SHA:scripts/phase4_source_ci.py" > "$RUNNER_TEMP/phase4_source_ci.py"
-          PYTHONPATH="$GITHUB_WORKSPACE/scripts" python3 "$RUNNER_TEMP/phase4_source_ci.py"
+          mkdir -p "$RUNNER_TEMP/phase4_trusted"
+          for script in phase4_source_ci.py phase4_queue.py; do
+            git show "$BASE_SHA:scripts/$script" > "$RUNNER_TEMP/phase4_trusted/$script"
+          done
+          PYTHONPATH="$RUNNER_TEMP/phase4_trusted" python3 "$RUNNER_TEMP/phase4_trusted/phase4_source_ci.py"
       - name: Verify Phase4 immutable generic source CI foundation
         if: github.event.pull_request.head.ref == 'codex/phase4-source-ci-foundation'
         env:
@@ -315,6 +318,7 @@ jobs:
           python3 - <<'PY'
           import os, subprocess
           allowed = {'scripts/phase4_source_ci.py', 'test/test_phase4_source_ci.py',
+                     'scripts/phase4_queue.py', 'test/test_phase4_queue.py',
                      'test/count-ascii-digits-v1.test.mjs', '.github/workflows/ci.yml'}
           names = set(subprocess.check_output(['git','diff','--name-only',
                           os.environ['BASE_SHA'] + '...' + os.environ['HEAD_SHA']],
