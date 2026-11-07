@@ -11,13 +11,19 @@ paid worker dispatcher.
   reviewer at most **20**, for a combined **53-credit worst case**.
 - The ledger schema is `{"version":1,"repository":"rpickett578/gh-aw-codex-pilot","claims":[]}`.
   A future, separately installed `phase4-dispatch-ledger` branch will hold
-  `phase4/dispatch-ledger.json`. This PR **does not create that branch**.
+  `phase4/dispatch-ledger.json`. The ledger branch is now initialized independently with **zero claims**, and this PR does not mutate it.
 - Each claim is keyed by task and stage, contains the exact run/worker/source/
   PR-head context and cannot be automatically repeated. Two attempts at the same
   stage return `HELD`, even if the earlier run failed.
 - The optional `--claim` path checks reviewed main, requires a separate explicit
   installation flag, reads the ledger from that branch, and writes with the
-  prior content SHA. A conflict fails closed, without retrying or launching.
+  prior content SHA. It rechecks main **immediately before and after** the
+  effective write. An approval change or conflict stops before any worker launch.
+- If main changes after a reservation but before launch, the old claim remains
+  held instead of being spent twice. Recovery: independently verify that no
+  coder/reviewer job launched for that run ID, retain the old reservation as an
+  audit receipt, and restore eligibility with a separate checked ledger
+  reconciliation. This PR does not silently clear or re-spend stale claims.
 - The `--preview` path runs every 15 minutes after installation and uses only
   read permissions. It never reads/writes the ledger, invokes the optional claim,
   calls Codex or dispatches any paid workflow.
