@@ -61,7 +61,7 @@ def verify():
     modes = git("ls-tree", head, "--", source_path).splitlines()
     require(len(modes) == 1 and modes[0].startswith("100644 blob "),
             "source must be a regular committed file")
-    require(len(git("show", head + ":" + source_path).encode("utf-8")) <= 16384,
+    require(len(subprocess.check_output(["git", "show", head + ":" + source_path])) <= 16384,
             "source exceeds 16 KiB")
     # The test file must already exist on trusted main (never from the coder).
     fixture_bytes = subprocess.check_output(["git", "show", base + ":" + fixture])
