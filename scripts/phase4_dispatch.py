@@ -168,8 +168,9 @@ def require_root_identity():
     require(os.environ.get("GITHUB_REPOSITORY") == REPO and
             os.environ.get("GITHUB_REF") == "refs/heads/main" and
             os.environ.get("GITHUB_RUN_ATTEMPT") == "1" and
-            os.environ.get("GITHUB_WORKFLOW") ==
-            "Phase 4 dispatch planning (no paid workers)",
+            os.environ.get("GITHUB_WORKFLOW") in (
+                "Phase 4 dispatch planning (no paid workers)",
+                "Phase 4 continuous synthetic worker chain"),
             "not the approved pilot main workflow")
     sha = os.environ.get("GITHUB_WORKFLOW_SHA")
     require(isinstance(sha, str) and len(sha) == SHA_SIZE and
