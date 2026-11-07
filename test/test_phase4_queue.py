@@ -89,6 +89,14 @@ def add_pr(queue, snap):
 
 
 class QueueTests(unittest.TestCase):
+    def test_reserved_phase4_engineering_branch_ids_rejected(self):
+        for ident in q.PHASE4_ENGINEERING_IDS:
+            with self.subTest(ident=ident):
+                manifest, snap = with_pending()
+                manifest["tasks"][-1]["id"] = ident
+                with self.assertRaises(q.QueueError):
+                    q.decide(manifest, snap)
+
     def test_completed_history_is_not_relaunched(self):
         self.assertEqual(q.decide(BASE, fake()),
                          {"action": "QUEUE_EMPTY", "completed": 3, "total": 3})
