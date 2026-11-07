@@ -99,7 +99,9 @@ def native_review_origin(review, item, snapshot):
     run = snapshot.get("runs", {}).get(roots[0])
     require(isinstance(run, dict) and
             run.get("repository", {}).get("full_name") == REPO and
-            run.get("event") == "workflow_dispatch" and
+            run.get("event") in (("workflow_dispatch",) if
+                                  item["id"] in LEGACY_PHASE3_IDS else
+                                  ("workflow_dispatch", "schedule")) and
             run.get("run_attempt") == 1 and
             run.get("status") == "completed" and
             run.get("conclusion") == "success" and
