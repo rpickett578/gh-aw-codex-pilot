@@ -327,6 +327,7 @@ jobs:
           print('PHASE4_SOURCE_CI_FOUNDATION_SCOPE_PASS', sorted(names))
           PY
           python3 -m unittest discover -s test -p 'test_phase4_source_ci.py' -v
+          python3 -m unittest discover -s test -p 'test_phase4_queue.py' -v
           python3 -m py_compile scripts/phase4_source_ci.py
           git diff --check "$BASE_SHA...$HEAD_SHA"
           gh release download v1.7.7 -R rhysd/actionlint -p actionlint_1.7.7_linux_amd64.tar.gz -p actionlint_1.7.7_checksums.txt -D "$RUNNER_TEMP"
