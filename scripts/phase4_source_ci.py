@@ -48,7 +48,7 @@ def required_tests(tap_text, expected):
             "invalid reviewed fixture test count")
     reports = {}
     for field in ("tests", "pass", "fail", "cancelled", "skipped", "todo"):
-        matches = re.findall(r"^# " + field + r" (\\d+)$",
+        matches = re.findall(r"^# " + field + r" (\d+)$",
                              tap_text, re.M)
         require(len(matches) > 0, "missing TAP summary: " + field)
         reports[field] = int(matches[-1])
