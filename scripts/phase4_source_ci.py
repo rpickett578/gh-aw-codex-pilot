@@ -73,6 +73,7 @@ def sandbox_command(source_path, fixture_path,
             all(Path(x).is_file() for x in (source, fixture, helper)),
             "missing or overlapping sandbox files")
     return ["node", "--experimental-vm-modules", "--permission",
+            "--test-reporter=tap",
             "--allow-fs-read=" + fixture, "--allow-fs-read=" + source,
             "--allow-fs-read=" + helper, fixture]
 
